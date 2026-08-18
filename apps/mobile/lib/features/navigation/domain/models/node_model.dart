@@ -1,0 +1,1 @@
+export 'package:campus_domain/models/node_model.dart';

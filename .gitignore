@@ -1,0 +1,24 @@
+# Logs y archivos temporales
+*.log
+*.tmp
+*.bak
+Thumbs.db
+Desktop.ini
+
+# Credenciales y secretos
+*.jks
+*.keystore
+*.properties.local
+.env
+**/key.properties
+
+# Dart / Flutter (los .gitignore internos por app ya cubren build/.dart_tool)
+.dart_tool/
+.build/
+
+# Datos de runtime generados por el backend de push
+tools/backend_data/
+
+# Editor
+*.iml
+.idea/

@@ -1,0 +1,71 @@
+name: app_guia_ar
+description: "App de navegación interactiva 360° para campus universitario"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Dominio compartido con la web de administración (modelos + bundle)
+  campus_domain:
+    path: ../../packages/campus_domain
+
+  cupertino_icons: ^1.0.8
+  
+  # State Management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+  
+  # Firebase
+  firebase_core: ^3.12.1
+  cloud_firestore: ^5.6.5
+  firebase_storage: ^12.4.3
+  
+  # Panorama Viewer
+  # Location & Permissions
+  geolocator: ^13.0.2
+  permission_handler: ^11.3.1
+  # Utils
+  equatable: ^2.0.5
+  get_it: ^8.0.3
+  google_fonts: ^6.2.1
+  intl: ^0.19.0
+  url_launcher: ^6.3.1
+  
+  # Cache & Storage
+  shared_preferences: ^2.3.3
+  path_provider: ^2.1.5
+  
+  # Images
+  cached_network_image: ^3.4.1
+  image_picker: ^1.1.2
+  
+  # Maps (for route display)
+  google_maps_flutter: ^2.10.1
+  mobile_scanner: ^7.4.0
+  panorama_viewer: ^2.0.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  
+  # Testing
+  mockito: ^5.4.4
+  build_runner: ^2.4.13
+  
+  # Code Generation
+  riverpod_generator: ^2.4.3
+  json_serializable: ^6.8.0
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/panoramas/

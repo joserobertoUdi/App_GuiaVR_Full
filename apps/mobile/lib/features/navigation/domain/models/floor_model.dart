@@ -1,0 +1,1 @@
+export 'package:campus_domain/models/floor_model.dart';

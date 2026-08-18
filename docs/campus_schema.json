@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Campus Navigation Data",
+  "description": "Schema for campus 360° navigation data with hierarchical structure: Campus > Building > Floor > Zone > Node",
+  "type": "object",
+  "required": ["id", "name", "buildings", "floors", "zones", "nodes"],
+  "properties": {
+    "id": { "type": "string", "description": "Unique campus identifier" },
+    "name": { "type": "string", "description": "Campus display name" },
+    "description": { "type": "string" },
+    "version": { "type": "string", "description": "Data schema version" },
+    "metadata": { "type": "object" },
+    "buildings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "latitude", "longitude", "floorIds"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "latitude": { "type": "number" },
+          "longitude": { "type": "number" },
+          "floorIds": { "type": "array", "items": { "type": "string" } },
+          "metadata": { "type": "object" }
+        }
+      }
+    },
+    "floors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "level", "buildingId", "zoneIds"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "level": { "type": "integer" },
+          "buildingId": { "type": "string" },
+          "zoneIds": { "type": "array", "items": { "type": "string" } },
+          "stairNodeId": { "type": "string" },
+          "metadata": { "type": "object" }
+        }
+      }
+    },
+    "zones": {
+      "type": "array",
+      "description": "Zones form a graph via connectedZoneIds for zone-level navigation",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "floorId", "buildingId", "connectedZoneIds", "nodeIds"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "floorId": { "type": "string" },
+          "buildingId": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["vesticulo", "pasillo", "aula", "laboratorio", "biblioteca", "deporte", "servicio", "destino", "transicion"]
+          },
+          "connectedZoneIds": { "type": "array", "items": { "type": "string" } },
+          "nodeIds": { "type": "array", "items": { "type": "string" } },
+          "entryNodeId": { "type": "string", "description": "First node when entering this zone" },
+          "exitNodeId": { "type": "string", "description": "Last node when leaving this zone" },
+          "order": { "type": "integer", "description": "Display order within the floor" },
+          "metadata": { "type": "object" }
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "description": "Nodes form a graph via connectedNodeIds for node-level navigation within zones",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "latitude", "longitude", "panoramaId"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "latitude": { "type": "number" },
+          "longitude": { "type": "number" },
+          "heading": { "type": "number" },
+          "floorLevel": { "type": "string" },
+          "buildingId": { "type": "string" },
+          "panoramaId": { "type": "string" },
+          "connectedNodeIds": { "type": "array", "items": { "type": "string" } },
+          "zone": {
+            "type": "string",
+            "enum": ["exterior", "pasillo", "aula", "escalera", "vestibulo", "destino"]
+          },
+          "zoneId": { "type": "string", "description": "Reference to the zone this node belongs to" },
+          "destinationLabel": { "type": "string" },
+          "accuracy": { "type": "number" },
+          "metadata": { "type": "object" }
+        }
+      }
+    }
+  }
+}

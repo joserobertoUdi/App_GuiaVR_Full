@@ -1,0 +1,19 @@
+import 'dart:typed_data';
+
+/// Stub para entornos sin navegador (tests en VM). La publicación del bundle
+/// e imágenes solo tiene sentido ejecutándose dentro de un navegador.
+Future<bool> publishBundle(String baseUrl, String bundleJson) async {
+  throw UnsupportedError('BackendClient no disponible fuera del navegador');
+}
+
+Future<bool> publishImage(
+  String baseUrl,
+  String nodeId,
+  Uint8List bytes,
+) async {
+  throw UnsupportedError('BackendClient no disponible fuera del navegador');
+}
+
+Future<Map<String, dynamic>?> fetchBundleVersion(String baseUrl) async {
+  throw UnsupportedError('BackendClient no disponible fuera del navegador');
+}

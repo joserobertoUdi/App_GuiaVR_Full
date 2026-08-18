@@ -1,0 +1,1 @@
+export 'package:campus_domain/repository/campus_repository.dart';

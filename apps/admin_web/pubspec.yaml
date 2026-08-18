@@ -1,0 +1,36 @@
+name: admin_web
+description: "Panel de administración web del campus. Genera el bundle JSON que la app móvil importa."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Dominio compartido con la app móvil (modelos + formato bundle)
+  campus_domain:
+    path: ../../packages/campus_domain
+
+  cupertino_icons: ^1.0.8
+
+  # Utils
+  equatable: ^2.0.5
+
+  # Cache & Storage
+  shared_preferences: ^2.3.3
+
+  # Visor 360 para el editor de overlays
+  panorama_viewer: ^2.0.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/panoramas/

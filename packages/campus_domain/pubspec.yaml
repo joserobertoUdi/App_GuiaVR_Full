@@ -1,0 +1,13 @@
+name: campus_domain
+description: "Modelos de dominio, repositorio y formato de bundle del campus. Compartido entre la app movil y la web de administracion."
+version: 1.0.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  equatable: ^2.0.5
+
+dev_dependencies:
+  lints: ^6.0.0
