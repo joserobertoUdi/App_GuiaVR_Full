@@ -85,3 +85,22 @@ void downloadFile(
   anchor.remove();
   web.Url.revokeObjectUrl(url);
 }
+
+/// Descarga bytes binarios (p.ej. PNG) con nombre y MIME especificados.
+void downloadBytes(
+  String filename,
+  List<int> bytes, {
+  String mime = 'application/octet-stream',
+}) {
+  final blob = web.Blob([Uint8List.fromList(bytes)], mime);
+  final url = web.Url.createObjectUrlFromBlob(blob);
+
+  final anchor = web.AnchorElement(href: url)
+    ..download = filename
+    ..style.display = 'none';
+
+  web.document.body?.append(anchor);
+  anchor.click();
+  anchor.remove();
+  web.Url.revokeObjectUrl(url);
+}

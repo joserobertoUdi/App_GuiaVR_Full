@@ -14,6 +14,7 @@ import 'package:admin_web/features/navigation/domain/models/building_model.dart'
 import 'package:admin_web/features/navigation/data/datasources/mock_campus_data.dart';
 import 'package:admin_web/features/navigation/data/datasources/node_type_settings.dart';
 import 'package:admin_web/features/navigation/presentation/screens/catalog_tab.dart';
+import 'package:admin_web/features/navigation/presentation/screens/qr_tab.dart';
 import 'package:admin_web/features/panorama_viewer/data/datasources/overlay_storage.dart';
 import 'package:admin_web/features/panorama_viewer/data/datasources/connection_direction_storage.dart';
 import 'package:admin_web/features/panorama_viewer/presentation/screens/overlay_editor_screen.dart';
@@ -61,7 +62,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) setState(() {});
     });
@@ -107,6 +108,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             Tab(icon: Icon(Icons.account_tree), text: 'Estructura'),
             Tab(icon: Icon(Icons.add_location_alt), text: 'Agregar'),
             Tab(icon: Icon(Icons.manage_search), text: 'Catálogo'),
+            Tab(icon: Icon(Icons.qr_code_2), text: 'QR'),
             Tab(icon: Icon(Icons.settings), text: 'Config'),
             Tab(icon: Icon(Icons.merge_type), text: 'Overlays'),
           ],
@@ -118,6 +120,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           _buildStructureView(context),
           _buildAddView(context),
           CatalogTab(onChanged: () => setState(() {})),
+          const QrTab(),
           _buildConfigView(context),
           _buildOverlaysView(context),
         ],

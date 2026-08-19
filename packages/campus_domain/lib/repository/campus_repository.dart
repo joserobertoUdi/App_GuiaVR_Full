@@ -381,6 +381,25 @@ class CampusRepository {
     );
   }
 
+  void updateBuilding(BuildingModel building) {
+    final existing = _campus.getBuilding(building.id);
+    if (existing == null) return;
+    _updateBuilding(building);
+  }
+
+  void removeBuilding(String buildingId) {
+    final building = _campus.getBuilding(buildingId);
+    if (building == null) return;
+
+    for (final floorId in List.of(building.floorIds)) {
+      removeFloor(floorId);
+    }
+
+    _campus = _campus.copyWith(
+      buildings: _campus.buildings.where((b) => b.id != buildingId).toList(),
+    );
+  }
+
   void addFloor(FloorModel floor) {
     _campus = _campus.copyWith(
       floors: [..._campus.floors, floor],

@@ -14,3 +14,7 @@ Future<String?> pickJsonText() async {
 void downloadFile(String filename, String content, {String mime = 'application/json'}) {
   throw UnsupportedError('WebFileIO no disponible fuera del navegador');
 }
+
+void downloadBytes(String filename, List<int> bytes, {String mime = 'application/octet-stream'}) {
+  throw UnsupportedError('WebFileIO no disponible fuera del navegador');
+}

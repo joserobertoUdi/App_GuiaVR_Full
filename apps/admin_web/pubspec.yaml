@@ -24,6 +24,7 @@ dependencies:
 
   # Visor 360 para el editor de overlays
   panorama_viewer: ^2.0.7
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

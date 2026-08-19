@@ -20,9 +20,15 @@ class CatalogTab extends StatefulWidget {
 }
 
 class _CatalogTabState extends State<CatalogTab> {
+  final _buildingKey = GlobalKey<FormState>();
   final _floorKey = GlobalKey<FormState>();
   final _zoneKey = GlobalKey<FormState>();
 
+  TextEditingController? _buildingIdController;
+  TextEditingController? _buildingNameController;
+  TextEditingController? _buildingDescController;
+  TextEditingController? _buildingLatController;
+  TextEditingController? _buildingLonController;
   TextEditingController? _floorIdController;
   TextEditingController? _floorNameController;
   TextEditingController? _floorLevelController;
@@ -37,6 +43,7 @@ class _CatalogTabState extends State<CatalogTab> {
 
   FloorModel? _editingFloor;
   ZoneModel? _editingZone;
+  BuildingModel? _editingBuilding;
   bool _busy = false;
 
   @override
@@ -47,6 +54,11 @@ class _CatalogTabState extends State<CatalogTab> {
 
   @override
   void dispose() {
+    _buildingIdController?.dispose();
+    _buildingNameController?.dispose();
+    _buildingDescController?.dispose();
+    _buildingLatController?.dispose();
+    _buildingLonController?.dispose();
     _floorIdController?.dispose();
     _floorNameController?.dispose();
     _floorLevelController?.dispose();
@@ -84,6 +96,17 @@ class _CatalogTabState extends State<CatalogTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        _buildSectionHeader(
+          title: 'Edificios',
+          icon: Icons.apartment,
+          trailing: TextButton.icon(
+            onPressed: _busy ? null : () => _openBuildingForm(context),
+            icon: const Icon(Icons.add),
+            label: const Text('Agregar edificio'),
+          ),
+        ),
+        _buildBuildingsBody(),
+        const SizedBox(height: 24),
         _buildSectionHeader(
           title: 'Pisos',
           icon: Icons.layers,
@@ -149,6 +172,269 @@ class _CatalogTabState extends State<CatalogTab> {
         style: AppTheme.bodySmall.copyWith(color: AppTheme.textSecondaryColor),
       ),
     );
+  }
+
+  // ═══════════════════════════════════════════
+  // EDIFICIOS
+  // ═══════════════════════════════════════════
+
+  Widget _buildBuildingsBody() {
+    final campus = MockCampusData.campus;
+    if (campus.buildings.isEmpty) {
+      return _emptyHint('No hay edificios. Usa "Agregar edificio".');
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final building in campus.buildings)
+          _buildingCard(building),
+      ],
+    );
+  }
+
+  Widget _buildingCard(BuildingModel building) {
+    final floors = MockCampusData.campus
+        .getFloorsForBuilding(building.id)
+        .toList();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        dense: true,
+        leading: CircleAvatar(
+          radius: 16,
+          backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.12),
+          child: const Icon(Icons.apartment, size: 18),
+        ),
+        title: Text(building.name),
+        subtitle: Text(
+          '${building.id} · ${floors.length} piso(s) · '
+          '${building.latitude.toStringAsFixed(4)}, '
+          '${building.longitude.toStringAsFixed(4)}',
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Editar',
+              icon: const Icon(Icons.edit_outlined, size: 20),
+              onPressed: _busy ? null : () => _openBuildingForm(context, building: building),
+            ),
+            IconButton(
+              tooltip: 'Eliminar',
+              icon: const Icon(Icons.delete_outline, size: 20),
+              onPressed: _busy ? null : () => _confirmDeleteBuilding(context, building),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openBuildingForm(BuildContext context, {BuildingModel? building}) async {
+    _editingBuilding = building;
+    _buildingIdController = TextEditingController(text: building?.id ?? '');
+    _buildingNameController = TextEditingController(text: building?.name ?? '');
+    _buildingDescController = TextEditingController(text: building?.description ?? '');
+    _buildingLatController =
+        TextEditingController(text: building?.latitude.toString() ?? '-16.5005');
+    _buildingLonController =
+        TextEditingController(text: building?.longitude.toString() ?? '-68.1505');
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Text(building == null ? 'Agregar edificio' : 'Editar edificio'),
+            content: Form(
+              key: _buildingKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: _buildingIdController,
+                      enabled: building == null,
+                      decoration: const InputDecoration(
+                        labelText: 'ID del edificio *',
+                        hintText: 'Ej: edificio_B',
+                        prefixIcon: Icon(Icons.tag),
+                      ),
+                      validator: (v) {
+                        final value = v?.trim() ?? '';
+                        if (value.isEmpty) return 'Se requiere un ID.';
+                        final exists = MockCampusData.campus.buildings
+                            .any((b) => b.id == value);
+                        return exists && building?.id != value
+                            ? 'El ID "$value" ya existe.'
+                            : null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _buildingNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre *',
+                        prefixIcon: Icon(Icons.place),
+                      ),
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Se requiere el nombre.'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _buildingDescController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Descripción',
+                        prefixIcon: Icon(Icons.notes),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _buildingLatController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                              signed: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'Latitud *',
+                              prefixIcon: Icon(Icons.pin_drop),
+                            ),
+                            validator: (v) {
+                              final d = double.tryParse(v?.trim() ?? '');
+                              if (d == null) return 'Número inválido.';
+                              return (d < -90 || d > 90)
+                                  ? 'Rango -90..90.'
+                                  : null;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _buildingLonController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                              signed: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'Longitud *',
+                              prefixIcon: Icon(Icons.pin_drop),
+                            ),
+                            validator: (v) {
+                              final d = double.tryParse(v?.trim() ?? '');
+                              if (d == null) return 'Número inválido.';
+                              return (d < -180 || d > 180)
+                                  ? 'Rango -180..180.'
+                                  : null;
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => _saveBuilding(context, dialogContext: dialogContext),
+                icon: const Icon(Icons.save),
+                label: Text(building == null ? 'Crear' : 'Guardar'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _saveBuilding(
+    BuildContext context, {
+    required BuildContext dialogContext,
+  }) async {
+    if (!_buildingKey.currentState!.validate()) return;
+
+    setState(() => _busy = true);
+    try {
+      final building = BuildingModel(
+        id: _buildingIdController!.text.trim(),
+        name: _buildingNameController!.text.trim(),
+        description: _buildingDescController!.text.trim(),
+        latitude: double.parse(_buildingLatController!.text.trim()),
+        longitude: double.parse(_buildingLonController!.text.trim()),
+        floorIds: _editingBuilding?.floorIds ?? const [],
+      );
+      if (_editingBuilding != null) {
+        MockCampusData.updateBuilding(building);
+      } else {
+        MockCampusData.addBuilding(building);
+      }
+      if (!mounted) return;
+      Navigator.of(dialogContext).pop();
+      AppNotifications.showSuccess(
+        context,
+        title: _editingBuilding == null ? 'Edificio creado' : 'Edificio actualizado',
+        description: '${building.name} se guardó correctamente.',
+      );
+      widget.onChanged();
+      _editingBuilding = null;
+    } catch (e) {
+      if (!mounted) return;
+      AppNotifications.showError(
+        context,
+        title: 'Error al guardar',
+        description: 'No se pudo guardar el edificio: $e',
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _confirmDeleteBuilding(BuildContext context, BuildingModel building) async {
+    final floors = MockCampusData.campus
+        .getFloorsForBuilding(building.id)
+        .toList();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar edificio'),
+        content: Text(
+          floors.isNotEmpty
+              ? '¿Eliminar "${building.name}"? También se eliminarán sus '
+                  '${floors.length} piso(s), zonas y nodos asociados.'
+              : '¿Eliminar el edificio "${building.name}"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.errorColor),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (result != true) return;
+    MockCampusData.removeBuilding(building.id);
+    if (!context.mounted) return;
+    AppNotifications.showSuccess(
+      context,
+      title: 'Edificio eliminado',
+      description: '${building.name} se eliminó del campus.',
+    );
+    widget.onChanged();
   }
 
   // ═══════════════════════════════════════════

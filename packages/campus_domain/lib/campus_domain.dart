@@ -10,5 +10,6 @@ export 'models/floor_model.dart';
 export 'models/node_model.dart';
 export 'models/panorama_overlay_model.dart';
 export 'models/zone_model.dart';
+export 'qr/campus_qr_code.dart';
 export 'repository/campus_repository.dart';
 export 'bundle/campus_bundle.dart';

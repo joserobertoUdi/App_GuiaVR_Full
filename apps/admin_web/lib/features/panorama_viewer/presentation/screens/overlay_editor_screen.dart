@@ -62,16 +62,24 @@ class _OverlayEditorScreenState extends State<OverlayEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 24),
-      children: [
-        _buildNodeSelector(),
-        if (_selectedNodeId != null) ...[
-          _buildConnectionsSection(),
-          _buildOverlayList(),
-          if (_isAddingNew || _editingOverlay != null) _buildOverlayForm(),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Editor de overlays 360°'),
+        leading: BackButton(
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          _buildNodeSelector(),
+          if (_selectedNodeId != null) ...[
+            _buildConnectionsSection(),
+            _buildOverlayList(),
+            if (_isAddingNew || _editingOverlay != null) _buildOverlayForm(),
+          ],
         ],
-      ],
+      ),
     );
   }
 

@@ -10,4 +10,6 @@ dependencies:
   equatable: ^2.0.5
 
 dev_dependencies:
+  flutter_test:
+    sdk: flutter
   lints: ^6.0.0

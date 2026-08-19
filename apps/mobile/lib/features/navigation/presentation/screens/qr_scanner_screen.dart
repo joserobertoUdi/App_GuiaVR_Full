@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:app_guia_ar/features/navigation/domain/models/node_model.dart';
+import 'package:campus_domain/campus_domain.dart';
 import 'package:app_guia_ar/features/navigation/data/datasources/mock_campus_data.dart';
 import 'package:app_guia_ar/core/theme/app_theme.dart';
 import 'package:app_guia_ar/features/navigation/presentation/utils/route_readiness.dart';
+import 'package:app_guia_ar/features/navigation/presentation/utils/qr_location_resolver.dart';
 import 'package:app_guia_ar/features/navigation/domain/models/route_model.dart';
 import 'package:app_guia_ar/core/utils/app_notifications.dart';
 
@@ -45,16 +46,16 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
 
     setState(() => _isProcessing = true);
 
-    final nodeId = _parseNodeId(barcode.rawValue!);
-    if (nodeId != null) {
-      final node = MockCampusData.getNodeById(nodeId);
-      if (node != null) {
-        _showNodeDetectedDialog(node);
-      } else {
-        _showError('Nodo no encontrado: $nodeId');
-      }
-    } else {
+    final ref = CampusQrCode.parse(barcode.rawValue!);
+    if (ref == null) {
       _showError('Código QR no válido para navegación');
+    } else {
+      final location = QrLocationResolver.resolve(ref);
+      if (location != null) {
+        _showNodeDetectedDialog(location);
+      } else {
+        _showError('Ubicación no encontrada: ${ref.id}');
+      }
     }
 
     Future.delayed(const Duration(seconds: 2), () {
@@ -62,39 +63,19 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     });
   }
 
-  String? _parseNodeId(String qrData) {
-    final data = qrData.trim().toUpperCase();
-
-    if (data.startsWith('NODE:')) {
-      return data.substring(5);
-    }
-
-    if (RegExp(r'^[A-Z0-9_]+$').hasMatch(data) && data.length >= 2) {
-      return data;
-    }
-
-    try {
-      final uri = Uri.parse(qrData);
-      if (uri.queryParameters.containsKey('node')) {
-        return uri.queryParameters['node'];
-      }
-    } catch (_) {}
-
-    return null;
-  }
-
-  void _showNodeDetectedDialog(NodeModel node) {
+  void _showNodeDetectedDialog(QrLocationResult location) {
+    final node = location.node;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         icon: Icon(Icons.check_circle, color: AppTheme.successColor, size: 48),
-        title: Text(' Nodo Detectado'),
+        title: const Text('Ubicación Detectada'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              node.name,
+              location.locationLabel,
               style: AppTheme.headingMedium,
               textAlign: TextAlign.center,
             ),

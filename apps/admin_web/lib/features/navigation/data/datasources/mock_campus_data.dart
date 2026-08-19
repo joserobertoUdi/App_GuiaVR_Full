@@ -322,6 +322,21 @@ class MockCampusData {
     _safeSave();
   }
 
+  static void addBuilding(BuildingModel building) {
+    _repo.addBuilding(building);
+    _safeSave();
+  }
+
+  static void updateBuilding(BuildingModel building) {
+    _repo.updateBuilding(building);
+    _safeSave();
+  }
+
+  static void removeBuilding(String buildingId) {
+    _repo.removeBuilding(buildingId);
+    _safeSave();
+  }
+
   static void addFloor(FloorModel floor) {
     _repo.addFloor(floor);
     _safeSave();
