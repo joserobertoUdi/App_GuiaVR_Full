@@ -23,6 +23,8 @@ Future<void> main(List<String> args) async {
   if (!dataDir.existsSync()) dataDir.createSync(recursive: true);
   final imagesDir = Directory('${dataDir.path}/images');
   if (!imagesDir.existsSync()) imagesDir.createSync(recursive: true);
+  final homeMediaDir = Directory('${dataDir.path}/home_media');
+  if (!homeMediaDir.existsSync()) homeMediaDir.createSync(recursive: true);
 
   final server = await HttpServer.bind(InternetAddress.anyIPv4, port);
   stdout.writeln('Backend Push corriendo en http://${server.address.address}:$port');
@@ -30,7 +32,7 @@ Future<void> main(List<String> args) async {
   stdout.writeln('Control+C para detener.');
 
   await for (final req in server) {
-    _handle(req, dataDir, imagesDir);
+    _handle(req, dataDir, imagesDir, homeMediaDir);
   }
 }
 
@@ -38,6 +40,7 @@ Future<void> _handle(
   HttpRequest req,
   Directory dataDir,
   Directory imagesDir,
+  Directory homeMediaDir,
 ) async {
   final res = req.response;
   _cors(res);
@@ -116,6 +119,42 @@ Future<void> _handle(
         final bytes = await _collect(req);
         await file.writeAsBytes(bytes);
         stdout.writeln('[images/$nodeId] publicado (${bytes.length} bytes)');
+        return respond(HttpStatus.ok, '{"status":"ok"}');
+      }
+    }
+
+    // ═══ HOME MEDIA (fondo de la app móvil) ═══
+    //   GET  /api/home-media            → lista de ids con media
+    //   GET  /api/home-media/<id>       → bytes del media
+    //   PUT  /api/home-media/<id>       → publicar media (body = bytes)
+    if (path == '/api/home-media') {
+      final ids = homeMediaDir
+          .listSync(followLinks: false)
+          .where((e) => e is File)
+          .map((e) => e.uri.pathSegments.last)
+          .where((name) => name.endsWith('.media'))
+          .map((name) => name.substring(0, name.length - '.media'.length))
+          .toList();
+      return respond(HttpStatus.ok, jsonEncode({'media': ids}));
+    }
+
+    final homeMatch = RegExp(r'^/api/home-media/([^/]+)$').firstMatch(path);
+    if (homeMatch != null) {
+      final mediaId = Uri.decodeComponent(homeMatch.group(1)!);
+      final file = File('${homeMediaDir.path}/$mediaId.media');
+      if (method == 'GET') {
+        if (file.existsSync()) {
+          res.headers.contentType = ContentType.binary;
+          await res.addStream(file.openRead());
+          await res.close();
+          return;
+        }
+        return respond(HttpStatus.notFound, '{"error":"media no existe"}');
+      }
+      if (method == 'PUT' || method == 'POST') {
+        final bytes = await _collect(req);
+        await file.writeAsBytes(bytes);
+        stdout.writeln('[home-media/$mediaId] publicado (${bytes.length} bytes)');
         return respond(HttpStatus.ok, '{"status":"ok"}');
       }
     }

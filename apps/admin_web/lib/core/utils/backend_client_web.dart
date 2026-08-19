@@ -40,6 +40,26 @@ Future<bool> publishImage(
   }
 }
 
+/// Publica un archivo de media del fondo de inicio de la app en el backend.
+Future<bool> publishHomeMedia(
+  String baseUrl,
+  String mediaId,
+  Uint8List bytes,
+) async {
+  try {
+    final blob = web.Blob([bytes]);
+    final request = await web.HttpRequest.request(
+      '$baseUrl/api/home-media/${Uri.encodeComponent(mediaId)}',
+      method: 'PUT',
+      sendData: blob,
+    );
+    final status = request.status ?? 0;
+    return status >= 200 && status < 300;
+  } catch (_) {
+    return false;
+  }
+}
+
 /// Opcional: consulta la versión publicada para mostrarla en el admin.
 Future<Map<String, dynamic>?> fetchBundleVersion(String baseUrl) async {
   try {
@@ -49,6 +69,21 @@ Future<Map<String, dynamic>?> fetchBundleVersion(String baseUrl) async {
     );
     if ((request.status ?? 0) != 200) return null;
     return json.decode(request.responseText ?? '') as Map<String, dynamic>;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Lee el bundle JSON publicado en el backend (la misma fuente que sincroniza
+/// la app móvil). Devuelve `null` si no hay bundle o hay error de red.
+Future<String?> fetchBundle(String baseUrl) async {
+  try {
+    final request = await web.HttpRequest.request(
+      '$baseUrl/api/bundle',
+      method: 'GET',
+    );
+    if ((request.status ?? 0) != 200) return null;
+    return request.responseText;
   } catch (_) {
     return null;
   }

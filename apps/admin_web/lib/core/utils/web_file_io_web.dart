@@ -13,6 +13,11 @@ Future<Uint8List?> pickImageBytes() {
   return _pickBytes(accept: 'image/*');
 }
 
+/// Abre el diálogo para elegir un archivo de video.
+Future<Uint8List?> pickVideoBytes() {
+  return _pickBytes(accept: 'video/*');
+}
+
 Future<String?> pickJsonText() {
   final completer = Completer<String?>();
 

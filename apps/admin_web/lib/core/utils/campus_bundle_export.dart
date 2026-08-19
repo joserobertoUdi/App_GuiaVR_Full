@@ -14,11 +14,16 @@ class CampusBundleExport {
   CampusBundleExport._();
 
   /// Genera el bundle completo a partir de los datos locales actuales.
-  static String buildBundle() {
+  static String buildBundle({
+    shared.HomeBackgroundConfig? home,
+    shared.NavigationConfig? navigation,
+  }) {
     return shared.CampusBundle.buildJson(
       campus: MockCampusData.campus,
       overlays: OverlayStorage.exportToJson(),
       connectionDirections: ConnectionDirectionStorage.exportToJson(),
+      home: home,
+      navigation: navigation,
     );
   }
 

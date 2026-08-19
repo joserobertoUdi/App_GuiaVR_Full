@@ -18,6 +18,7 @@ Desktop.ini
 
 # Datos de runtime generados por el backend de push
 tools/backend_data/
+backend_data/
 
 # Editor
 *.iml

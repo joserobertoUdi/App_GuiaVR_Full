@@ -1,4 +1,6 @@
 import 'package:campus_domain/campus_domain.dart' as shared;
+import 'package:app_guia_ar/core/utils/home_content_storage.dart';
+import 'package:app_guia_ar/core/utils/navigation_settings.dart';
 import 'package:app_guia_ar/features/navigation/data/datasources/mock_campus_data.dart';
 import 'package:app_guia_ar/features/panorama_viewer/data/datasources/overlay_storage.dart';
 import 'package:app_guia_ar/features/panorama_viewer/data/datasources/connection_direction_storage.dart';
@@ -29,6 +31,14 @@ class CampusBundleExport {
       if (data.connectionDirections.isNotEmpty) {
         ConnectionDirectionStorage.importFromJson(data.connectionDirections);
       }
+
+      final home = data.home;
+      if (home != null) {
+        HomeContentStorage.saveConfig(home);
+      }
+
+      final navigation = data.navigation;
+      NavigationSettings.applyNavigationConfig(navigation);
 
       return true;
     } catch (_) {

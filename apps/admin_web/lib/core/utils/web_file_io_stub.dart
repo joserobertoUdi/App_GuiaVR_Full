@@ -7,6 +7,10 @@ Future<Uint8List?> pickImageBytes() async {
   throw UnsupportedError('WebFileIO no disponible fuera del navegador');
 }
 
+Future<Uint8List?> pickVideoBytes() async {
+  throw UnsupportedError('WebFileIO no disponible fuera del navegador');
+}
+
 Future<String?> pickJsonText() async {
   throw UnsupportedError('WebFileIO no disponible fuera del navegador');
 }

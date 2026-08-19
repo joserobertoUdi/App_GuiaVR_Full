@@ -5,6 +5,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:campus_domain/campus_domain.dart';
 import 'package:admin_web/core/theme/app_theme.dart';
 import 'package:admin_web/core/utils/app_notifications.dart';
+import 'package:admin_web/core/utils/app_settings.dart';
+import 'package:admin_web/core/utils/backend_client.dart';
 import 'package:admin_web/core/utils/qr_image_renderer.dart';
 import 'package:admin_web/core/utils/web_file_io.dart';
 import 'package:admin_web/features/navigation/data/datasources/mock_campus_data.dart';
@@ -33,6 +35,64 @@ class _QrTabState extends State<QrTab> {
   CampusQrEntityType _type = CampusQrEntityType.zone;
   final Set<String> _selected = {};
 
+  /// Campus publicado en el backend (misma fuente que sincroniza la app móvil).
+  CampusModel? _published;
+  bool _loadingPublished = true;
+  String? _sourceMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPublishedCampus();
+  }
+
+  /// Fuente de datos para generar los QR: prioriza el campus publicado en el
+  /// backend; si no hay bundle con datos, cae a los datos locales.
+  CampusModel get _sourceCampus {
+    final published = _published;
+    if (published != null &&
+        (published.nodes.isNotEmpty || published.zones.isNotEmpty)) {
+      return published;
+    }
+    return MockCampusData.campus;
+  }
+
+  bool get _usingPublished => _sourceCampus != MockCampusData.campus;
+
+  Future<void> _loadPublishedCampus() async {
+    final url = await AppSettings.backendBaseUrl();
+    if (url.isEmpty) {
+      setState(() {
+        _loadingPublished = false;
+        _sourceMessage = 'No hay URL de backend configurada.';
+      });
+      return;
+    }
+    setState(() => _loadingPublished = true);
+    try {
+      final bundleJson = await fetchBundle(url);
+      if (bundleJson == null) {
+        setState(() {
+          _loadingPublished = false;
+          _sourceMessage = 'No se pudo leer el bundle publicado en $url.';
+        });
+        return;
+      }
+      final data = CampusBundle.parse(bundleJson);
+      setState(() {
+        _published = data.campus;
+        _loadingPublished = false;
+        _sourceMessage = null;
+        _selected.clear();
+      });
+    } catch (e) {
+      setState(() {
+        _loadingPublished = false;
+        _sourceMessage = 'Bundle publicado inválido: $e';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final entries = _entriesFor(_type);
@@ -41,6 +101,8 @@ class _QrTabState extends State<QrTab> {
       padding: const EdgeInsets.all(16),
       children: [
         _buildIntroCard(),
+        const SizedBox(height: 16),
+        _buildSourceBanner(),
         const SizedBox(height: 16),
         _buildTypeSelector(),
         const SizedBox(height: 8),
@@ -52,6 +114,65 @@ class _QrTabState extends State<QrTab> {
         if (entries.isEmpty)
           _emptyHint('No hay elementos para este nivel. Crea datos primero.'),
       ],
+    );
+  }
+
+  Widget _buildSourceBanner() {
+    if (_loadingPublished) {
+      return _sourceCard(
+        color: AppTheme.primaryColor,
+        icon: Icons.cloud_download_outlined,
+        title: 'Cargando campus publicado…',
+        subtitle: 'Se leerá el bundle desde el backend para generar QR que '
+            'coincidan con lo que sincroniza la app móvil.',
+      );
+    }
+
+    if (_usingPublished) {
+      final published = _published!;
+      return _sourceCard(
+        color: AppTheme.successColor,
+        icon: Icons.cloud_done_outlined,
+        title: 'Generando desde el campus publicado (${published.id})',
+        subtitle: 'Misma fuente que sincroniza la app al escanear. Los QR '
+            'coincidirán con las instancias físicas.',
+        actionable: _loadPublishedCampus,
+      );
+    }
+
+    return _sourceCard(
+      color: AppTheme.warningColor,
+      icon: Icons.warning_amber_rounded,
+      title: 'Generando desde los datos locales',
+      subtitle: _sourceMessage ??
+          'El backend no tiene un bundle con datos. Publica en Admin → Config '
+              'para que la app móvil pueda ubicar estas instancias.',
+      actionable: _loadPublishedCampus,
+    );
+  }
+
+  Widget _sourceCard({
+    required Color color,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    VoidCallback? actionable,
+  }) {
+    return Card(
+      margin: EdgeInsets.zero,
+      color: color.withValues(alpha: 0.08),
+      child: ListTile(
+        leading: Icon(icon, color: color),
+        title: Text(title, style: AppTheme.bodyMedium),
+        subtitle: Text(subtitle, style: AppTheme.bodySmall),
+        trailing: actionable == null
+            ? null
+            : IconButton(
+                tooltip: 'Recargar del backend',
+                icon: const Icon(Icons.refresh),
+                onPressed: actionable,
+              ),
+      ),
     );
   }
 
@@ -111,7 +232,9 @@ class _QrTabState extends State<QrTab> {
             Text(
               '● Generación individual: botón "QR" en cada fila.\n'
               '● Generación masiva: marca varias filas y pulsa "Generar en masa".\n'
-              '● Los QR se descargan como PNG para imprimir y pegar en el campus.',
+              '● Los QR se descargan como PNG para imprimir y pegar en el campus.\n'
+              '● Se generan desde el campus publicado en el backend para que la '
+              'app móvil ubique la instancia física al escanear.',
               style: AppTheme.bodySmall,
             ),
           ],
@@ -245,7 +368,7 @@ class _QrTabState extends State<QrTab> {
   }
 
   List<_QrEntry> _entriesFor(CampusQrEntityType type) {
-    final campus = MockCampusData.campus;
+    final campus = _sourceCampus;
     final entries = <_QrEntry>[];
 
     switch (type) {

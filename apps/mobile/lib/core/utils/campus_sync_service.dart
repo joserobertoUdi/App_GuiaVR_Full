@@ -3,16 +3,20 @@ import 'dart:io';
 
 import 'package:app_guia_ar/core/utils/app_settings.dart';
 import 'package:app_guia_ar/core/utils/campus_bundle_export.dart';
+import 'package:app_guia_ar/core/utils/home_content_storage.dart';
 import 'package:app_guia_ar/core/utils/local_image_storage.dart';
 import 'package:app_guia_ar/features/navigation/data/datasources/mock_campus_data.dart';
 
 /// Sincronización automática con el backend de push.
 ///
 /// Al arrancar la app consulta el servidor del admin:
-///   - `/api/bundle`: último bundle publicado (campus + overlays + direcciones),
-///     se aplica con `CampusBundleExport.importFromBundle`.
+///   - `/api/bundle`: último bundle publicado (campus + overlays + direcciones +
+///     configuración del fondo de inicio), se aplica con
+///     `CampusBundleExport.importFromBundle`.
 ///   - `/api/images`: imágenes de panorama por nodo descargadas y guardadas en
 ///     `LocalImageStorage`.
+///   - `/api/home-media`: media del fondo de inicio (imagen/video/carrusel/360°)
+///     descargados y guardados en `HomeContentStorage`.
 ///
 /// Es transparente para el usuario final: no hay botones ni configuración.
 class CampusSyncService {
@@ -43,6 +47,10 @@ class CampusSyncService {
 
       try {
         await _downloadImages(client, baseUrl);
+      } catch (_) {}
+
+      try {
+        await _downloadHomeMedia(client, baseUrl);
       } catch (_) {}
 
       client.close(force: true);
@@ -84,6 +92,41 @@ class CampusSyncService {
           await imgResponse.fold<List<int>>([], (acc, chunk) => acc..addAll(chunk));
       if (bytes.isEmpty) continue;
       await LocalImageStorage.saveImage(nodeId: nodeId, bytes: bytes);
+    }
+  }
+
+  /// Descarga los media del fondo de inicio configurados en el bundle.
+  static Future<void> _downloadHomeMedia(
+    HttpClient client,
+    String baseUrl,
+  ) async {
+    final config = await HomeContentStorage.loadConfig();
+    if (config == null || config.isEmpty) return;
+
+    var downloaded = 0;
+    for (final mediaId in config.mediaIds) {
+      final hasLocal = await HomeContentStorage.hasMedia(mediaId, config.type);
+      if (hasLocal) continue;
+
+      final mediaRequest =
+          await client.getUrl(Uri.parse('$baseUrl/api/home-media/$mediaId'));
+      final mediaResponse = await mediaRequest.close();
+      if (mediaResponse.statusCode != HttpStatus.ok) continue;
+
+      final bytes = await mediaResponse
+          .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk));
+      if (bytes.isEmpty) continue;
+      await HomeContentStorage.saveMedia(
+        mediaId: mediaId,
+        bytes: bytes,
+        type: config.type,
+      );
+      downloaded++;
+    }
+
+    // Notifica a la pantalla de inicio para recargar el fondo sin reiniciar.
+    if (downloaded > 0) {
+      HomeContentStorage.notifyChange();
     }
   }
 }

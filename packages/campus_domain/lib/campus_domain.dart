@@ -13,3 +13,5 @@ export 'models/zone_model.dart';
 export 'qr/campus_qr_code.dart';
 export 'repository/campus_repository.dart';
 export 'bundle/campus_bundle.dart';
+export 'home/home_background_config.dart';
+export 'navigation/navigation_config.dart';

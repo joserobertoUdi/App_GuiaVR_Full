@@ -14,6 +14,18 @@ Future<bool> publishImage(
   throw UnsupportedError('BackendClient no disponible fuera del navegador');
 }
 
+Future<bool> publishHomeMedia(
+  String baseUrl,
+  String mediaId,
+  Uint8List bytes,
+) async {
+  throw UnsupportedError('BackendClient no disponible fuera del navegador');
+}
+
 Future<Map<String, dynamic>?> fetchBundleVersion(String baseUrl) async {
+  throw UnsupportedError('BackendClient no disponible fuera del navegador');
+}
+
+Future<String?> fetchBundle(String baseUrl) async {
   throw UnsupportedError('BackendClient no disponible fuera del navegador');
 }

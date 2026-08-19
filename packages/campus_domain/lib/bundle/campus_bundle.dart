@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'package:campus_domain/home/home_background_config.dart';
 import 'package:campus_domain/models/campus_model.dart';
+import 'package:campus_domain/navigation/navigation_config.dart';
 
 /// Formato de intercambio entre la web de administración y la app móvil.
 ///
@@ -23,12 +25,16 @@ class CampusBundle {
     required CampusModel campus,
     Map<String, dynamic> overlays = const {},
     Map<String, dynamic> connectionDirections = const {},
+    HomeBackgroundConfig? home,
+    NavigationConfig? navigation,
     bool pretty = true,
   }) {
     final data = buildData(
       campus: campus,
       overlays: overlays,
       connectionDirections: connectionDirections,
+      home: home,
+      navigation: navigation,
     );
     if (pretty) {
       const encoder = JsonEncoder.withIndent('  ');
@@ -42,6 +48,8 @@ class CampusBundle {
     required CampusModel campus,
     Map<String, dynamic> overlays = const {},
     Map<String, dynamic> connectionDirections = const {},
+    HomeBackgroundConfig? home,
+    NavigationConfig? navigation,
   }) {
     return {
       'version': version,
@@ -49,6 +57,8 @@ class CampusBundle {
       'campus': campus.toJson(),
       'overlays': overlays,
       'connectionDirections': connectionDirections,
+      if (home != null) 'home': home.toJson(),
+      if (navigation != null) 'navigation': navigation.toJson(),
     };
   }
 
@@ -83,6 +93,8 @@ class CampusBundle {
       overlays: (map['overlays'] as Map<String, dynamic>?) ?? const {},
       connectionDirections:
           (map['connectionDirections'] as Map<String, dynamic>?) ?? const {},
+      home: HomeBackgroundConfig.fromJson(map['home']),
+      navigation: NavigationConfig.fromJson(map['navigation']),
     );
   }
 
@@ -102,9 +114,13 @@ class CampusBundle {
           overlays?.values.fold<int>(0, (sum, v) => sum + (v as List).length) ?? 0;
       final directionCount =
           directions?.values.fold<int>(0, (sum, v) => sum + (v as List).length) ?? 0;
+      final home = HomeBackgroundConfig.fromJson(decoded['home']);
+      final navigation = NavigationConfig.fromJson(decoded['navigation']);
 
       return 'Pisos: $floors | Zonas: $zones | Nodos: $nodes | '
-          'Overlays: $overlayCount | Direcciones: $directionCount';
+          'Overlays: $overlayCount | Direcciones: $directionCount'
+          '${home != null ? ' | Home: ${home.describe()}' : ''}'
+          '${navigation != null ? ' | ${navigation.describe()}' : ''}';
     } catch (_) {
       return 'Bundle inválido';
     }
@@ -118,10 +134,18 @@ class CampusBundleData {
   final Map<String, dynamic> overlays;
   final Map<String, dynamic> connectionDirections;
 
+  /// Fondo de la pantalla de inicio (null si no está publicado).
+  final HomeBackgroundConfig? home;
+
+  /// Configuración de navegación (inicio por defecto) del bundle.
+  final NavigationConfig? navigation;
+
   const CampusBundleData({
     required this.version,
     required this.campus,
     required this.overlays,
     required this.connectionDirections,
+    this.home,
+    this.navigation,
   });
 }

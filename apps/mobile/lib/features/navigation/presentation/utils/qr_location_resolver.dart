@@ -22,30 +22,41 @@ class QrLocationResult {
 /// Resuelve un código QR escaneado a un punto concreto del campus.
 ///
 /// Cada QR lleva DOS identificadores (`id` y `name`): si el `id` no existe se
-/// intenta por `name`, y viceversa.
+/// intenta por `name`, y viceversa. La búsqueda por nombre normaliza acentos,
+/// mayúsculas y espacios para tolerar diferencias menores entre el dato
+/// publicado y el escaneado.
 ///
-/// - Nodo (`N`)     → el propio nodo.
-/// - Zona (`Z`)     → nodo de entrada de la zona (o su primer nodo).
-/// - Piso (`F`)     → primer nodo del piso (zona de menor orden).
-/// - Edificio (`B`) → primer nodo de su primer piso.
+/// - Nodo (`N`)     → el propio nodo (también por `panoramaId`, que es como el
+///   backend asocia imagen/overlay de cada instancia física).
+/// - Zona (`Z`)     → nodo de entrada de la zona; si no existe, primer nodo
+///   disponible de la zona; si tampoco, un nodo del mismo piso.
+/// - Piso (`F`)     → primer nodo del piso (zona de menor orden); si no hay,
+///   primer nodo que declare ese piso.
+/// - Edificio (`B`) → primer nodo de su primer piso; si no hay, primer nodo del
+///   edificio.
 class QrLocationResolver {
   QrLocationResolver._();
 
-  static QrLocationResult? resolve(CampusQrReference ref) {
-    final campus = MockCampusData.campus;
+  /// [campus] permite inyectar datos en tests; por defecto usa el campus que la
+  /// app tiene sincronizado (backend de push o datos locales).
+  static QrLocationResult? resolve(
+    CampusQrReference ref, {
+    CampusModel? campus,
+  }) {
+    final model = campus ?? MockCampusData.campus;
 
     switch (ref.type) {
       case CampusQrEntityType.node:
-        return _resolveNode(ref, campus);
+        return _resolveNode(ref, model);
 
       case CampusQrEntityType.zone:
-        return _resolveZone(ref, campus);
+        return _resolveZone(ref, model);
 
       case CampusQrEntityType.floor:
-        return _resolveFloor(ref, campus);
+        return _resolveFloor(ref, model);
 
       case CampusQrEntityType.building:
-        return _resolveBuilding(ref, campus);
+        return _resolveBuilding(ref, model);
     }
   }
 
@@ -69,11 +80,9 @@ class QrLocationResolver {
     final zone = _zoneByIdOrName(ref.id, ref.name, campus);
     if (zone == null) return null;
 
-    String? nodeId = zone.entryNodeId;
-    if (nodeId == null && zone.nodeIds.isNotEmpty) nodeId = zone.nodeIds.first;
-    final node = nodeId == null ? null : campus.getNode(nodeId);
-
+    final node = _firstAvailableNodeForZone(zone, campus);
     if (node == null) return null;
+
     return QrLocationResult(
       node: node,
       locationLabel: '${zone.name} · Piso ${_floorLabel(zone.floorId, campus)}',
@@ -92,11 +101,7 @@ class QrLocationResolver {
       ..sort((a, b) => a.order.compareTo(b.order));
 
     for (final zone in zones) {
-      String? nodeId = zone.entryNodeId;
-      if (nodeId == null && zone.nodeIds.isNotEmpty) {
-        nodeId = zone.nodeIds.first;
-      }
-      final node = nodeId == null ? null : campus.getNode(nodeId);
+      final node = _firstAvailableNodeForZone(zone, campus);
       if (node != null) {
         return QrLocationResult(
           node: node,
@@ -105,6 +110,16 @@ class QrLocationResolver {
         );
       }
     }
+
+    final floorNode = _firstNodeForFloor(floor, campus);
+    if (floorNode != null) {
+      return QrLocationResult(
+        node: floorNode,
+        locationLabel: '${floor.name} (${floor.id})',
+        qrId: floor.id,
+      );
+    }
+
     return null;
   }
 
@@ -134,20 +149,86 @@ class QrLocationResolver {
         );
       }
     }
+
+    for (final node in campus.nodes) {
+      if (node.buildingId == building.id) {
+        return QrLocationResult(
+          node: node,
+          locationLabel: building.name,
+          qrId: building.id,
+        );
+      }
+    }
+
     return null;
   }
 
-  // ═══ Búsqueda por id o nombre ═══
+  /// Devuelve el primer nodo disponible de una zona: entrada → primer `nodeId`
+  /// existente → primer nodo que declara `zoneId` → primer nodo de otro nodo
+  /// del mismo piso.
+  static NodeModel? _firstAvailableNodeForZone(
+    ZoneModel zone,
+    CampusModel campus,
+  ) {
+    NodeModel? node;
+    final entryId = zone.entryNodeId;
+    if (entryId != null && entryId.isNotEmpty) {
+      node = campus.getNode(entryId);
+      if (node != null) return node;
+    }
+
+    for (final candidate in zone.nodeIds) {
+      node = campus.getNode(candidate);
+      if (node != null) return node;
+    }
+
+    final byZone = campus.getNodesForZone(zone.id);
+    if (byZone.isNotEmpty) return byZone.first;
+
+    final floorZoneIds =
+        campus.getZonesForFloor(zone.floorId).map((z) => z.id).toSet();
+    for (final candidate in campus.nodes) {
+      if (candidate.zoneId != null && floorZoneIds.contains(candidate.zoneId)) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  /// Primer nodo que declara este piso (por id de piso, nivel o nombre).
+  static NodeModel? _firstNodeForFloor(FloorModel floor, CampusModel campus) {
+    for (final node in campus.nodes) {
+      final level = node.floorLevel?.trim() ?? '';
+      if (level == floor.id ||
+          level == '${floor.level}' ||
+          _normalize(level) == _normalize(floor.name)) {
+        return node;
+      }
+    }
+    return null;
+  }
+
+  // ═══ Búsqueda por id o nombre normalizado ═══
 
   static NodeModel? _nodeByIdOrName(String id, String name, CampusModel campus) {
-    final byId = campus.getNode(id);
+    final trimmedId = id.trim();
+    final byId = campus.getNode(trimmedId);
     if (byId != null) return byId;
+
+    // Las instancias físicas del backend se indexan por nodeId Y panoramaId.
+    if (trimmedId.isNotEmpty) {
+      for (final node in campus.nodes) {
+        if (node.panoramaId.trim() == trimmedId) return node;
+      }
+    }
+
     if (name.isEmpty) return null;
 
-    final normalized = name.toLowerCase().trim();
+    final normalized = _normalize(name);
     for (final node in campus.nodes) {
-      if (node.name.toLowerCase().trim() == normalized ||
-          node.destinationLabel?.toLowerCase().trim() == normalized) {
+      if (_normalize(node.name) == normalized ||
+          _normalize(node.destinationLabel ?? '') == normalized) {
         return node;
       }
     }
@@ -155,25 +236,25 @@ class QrLocationResolver {
   }
 
   static ZoneModel? _zoneByIdOrName(String id, String name, CampusModel campus) {
-    final byId = campus.getZone(id);
+    final byId = campus.getZone(id.trim());
     if (byId != null) return byId;
     if (name.isEmpty) return null;
 
-    final normalized = name.toLowerCase().trim();
+    final normalized = _normalize(name);
     for (final zone in campus.zones) {
-      if (zone.name.toLowerCase().trim() == normalized) return zone;
+      if (_normalize(zone.name) == normalized) return zone;
     }
     return null;
   }
 
   static FloorModel? _floorByIdOrName(String id, String name, CampusModel campus) {
-    final byId = campus.getFloor(id);
+    final byId = campus.getFloor(id.trim());
     if (byId != null) return byId;
     if (name.isEmpty) return null;
 
-    final normalized = name.toLowerCase().trim();
+    final normalized = _normalize(name);
     for (final floor in campus.floors) {
-      if (floor.name.toLowerCase().trim() == normalized) return floor;
+      if (_normalize(floor.name) == normalized) return floor;
     }
     return null;
   }
@@ -183,13 +264,13 @@ class QrLocationResolver {
     String name,
     CampusModel campus,
   ) {
-    final byId = campus.getBuilding(id);
+    final byId = campus.getBuilding(id.trim());
     if (byId != null) return byId;
     if (name.isEmpty) return null;
 
-    final normalized = name.toLowerCase().trim();
+    final normalized = _normalize(name);
     for (final building in campus.buildings) {
-      if (building.name.toLowerCase().trim() == normalized) return building;
+      if (_normalize(building.name) == normalized) return building;
     }
     return null;
   }
@@ -198,4 +279,25 @@ class QrLocationResolver {
     final floor = campus.getFloor(floorId);
     return floor?.name ?? floorId;
   }
+
+  /// Normaliza un texto para comparaciones tolerantes: minúsculas, sin acentos
+  /// y con espacios colapsados (p.ej. "Vestíbulo" ≡ "VESTIBULO" ≡ "vestibulo").
+  static String _normalize(String value) {
+    final lower = value.toLowerCase().trim();
+    final buffer = StringBuffer();
+    for (final rune in lower.runes) {
+      final ch = String.fromCharCode(rune);
+      buffer.write(_accentMap[ch] ?? ch);
+    }
+    return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  static const Map<String, String> _accentMap = {
+    'á': 'a', 'à': 'a', 'â': 'a', 'ä': 'a', 'ã': 'a', 'å': 'a',
+    'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+    'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+    'ó': 'o', 'ò': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o',
+    'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+    'ñ': 'n', 'ç': 'c',
+  };
 }
