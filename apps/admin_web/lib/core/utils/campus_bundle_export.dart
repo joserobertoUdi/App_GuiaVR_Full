@@ -1,4 +1,5 @@
 import 'package:campus_domain/campus_domain.dart' as shared;
+import 'package:admin_web/core/utils/home_editor_storage.dart';
 import 'package:admin_web/features/navigation/data/datasources/mock_campus_data.dart';
 import 'package:admin_web/features/panorama_viewer/data/datasources/overlay_storage.dart';
 import 'package:admin_web/features/panorama_viewer/data/datasources/connection_direction_storage.dart';
@@ -22,6 +23,30 @@ class CampusBundleExport {
       campus: MockCampusData.campus,
       overlays: OverlayStorage.exportToJson(),
       connectionDirections: ConnectionDirectionStorage.exportToJson(),
+      home: home,
+      navigation: navigation,
+    );
+  }
+
+  /// Genera el bundle incluyendo la configuración persistida del fondo de
+  /// inicio ([HomeEditorState]) y el nodo de inicio por defecto. Es el punto
+  /// de entrada usado por la publicación para que la app móvil reciba `home` y
+  /// `navigation` (antes se publicaba solo el campus).
+  static String buildBundleWithSettings({
+    required HomeEditorState? homeState,
+    required String? defaultStartNodeId,
+  }) {
+    final shared.HomeBackgroundConfig? home = homeState == null
+        ? null
+        : shared.HomeBackgroundConfig(
+            type: homeState.type,
+            mediaIds: homeState.media.map((m) => m.id).toList(),
+            intervalSeconds: homeState.intervalSeconds,
+          );
+    final navigation = defaultStartNodeId == null
+        ? null
+        : shared.NavigationConfig(defaultStartNodeId: defaultStartNodeId);
+    return buildBundle(
       home: home,
       navigation: navigation,
     );

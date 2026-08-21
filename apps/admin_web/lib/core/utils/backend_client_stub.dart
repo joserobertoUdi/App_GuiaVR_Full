@@ -29,3 +29,19 @@ Future<Map<String, dynamic>?> fetchBundleVersion(String baseUrl) async {
 Future<String?> fetchBundle(String baseUrl) async {
   throw UnsupportedError('BackendClient no disponible fuera del navegador');
 }
+
+Future<List<String>> fetchHomeMediaList(String baseUrl) async {
+  throw UnsupportedError('BackendClient no disponible fuera del navegador');
+}
+
+Future<Uint8List?> fetchHomeMediaBytes(String baseUrl, String mediaId) async {
+  throw UnsupportedError('BackendClient no disponible fuera del navegador');
+}
+
+Future<List<String>> fetchImageIds(String baseUrl) async {
+  throw UnsupportedError('BackendClient no disponible fuera del navegador');
+}
+
+Future<Uint8List?> fetchImageBytes(String baseUrl, String nodeId) async {
+  throw UnsupportedError('BackendClient no disponible fuera del navegador');
+}

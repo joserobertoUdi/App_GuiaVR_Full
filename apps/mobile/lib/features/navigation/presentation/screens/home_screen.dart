@@ -27,8 +27,6 @@ class _HomeScreenState extends State<HomeScreen>
   final Map<String, Uint8List> _mediaBytes = {};
   VideoPlayerController? _videoController;
   PanoramaController? _panoramaController;
-  Timer? _carouselTimer;
-  int _carouselIndex = 0;
   bool _loading = true;
 
   // Slider de panoramas 360°: una vuelta horizontal por imagen y avance.
@@ -36,6 +34,12 @@ class _HomeScreenState extends State<HomeScreen>
   final List<PanoramaController> _retiredPanoramaControllers = [];
   int _panoramaIndex = 0;
   static const Duration _panoTurnFade = Duration(milliseconds: 900);
+
+  // Rotación interactiva: al tocar/arrastrar el panorama la rotación se pausa
+  // (para explorar) y se reanuda desde el punto donde quedó la vista, de modo
+  // que al avanzar de slide se completa una vuelta completa respecto a esa vista.
+  double _turnBaseLongitude = 0;
+  bool _turnInteracting = false;
 
   @override
   void initState() {
@@ -49,7 +53,6 @@ class _HomeScreenState extends State<HomeScreen>
   void dispose() {
     HomeContentStorage.changes.removeListener(_onHomeContentChanged);
     _stopPanoramaSlider();
-    _carouselTimer?.cancel();
     _videoController?.dispose();
     _panoramaController?.dispose();
     super.dispose();
@@ -61,7 +64,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _loadContent() async {
     // Reinicia el estado de media previo antes de recargar.
-    _carouselTimer?.cancel();
     _stopPanoramaSlider();
     final oldVideo = _videoController;
     _videoController = null;
@@ -73,7 +75,6 @@ class _HomeScreenState extends State<HomeScreen>
       setState(() {
         _config = null;
         _mediaBytes.clear();
-        _carouselIndex = 0;
         _loading = false;
       });
       return;
@@ -118,32 +119,17 @@ class _HomeScreenState extends State<HomeScreen>
         ..clear()
         ..addAll(bytesMap);
       _loading = false;
-      if (config.type == HomeBackgroundType.carousel &&
-          _mediaBytes.length > 1) {
-        _startCarousel(config.intervalSeconds);
-      }
     });
 
-    // Pre-carga la siguiente imagen del fondo antes de mostrarla.
-    if (config.type == HomeBackgroundType.panorama &&
+    // El carrusel y el panorama son 360° interactivos: cada slide rota una
+    // vuelta completa durante el intervalo y luego avanza con crossfade.
+    if ((config.type == HomeBackgroundType.panorama ||
+            config.type == HomeBackgroundType.carousel) &&
         _mediaBytes.length > 1) {
       _panoramaIndex = 0;
       _startPanoramaSlider(config.intervalSeconds);
       _precachePanorama(_panoramaIndex + 1);
     }
-  }
-
-  void _startCarousel(int intervalSeconds) {
-    _carouselTimer?.cancel();
-    _carouselTimer = Timer.periodic(
-      Duration(seconds: intervalSeconds),
-      (_) {
-        if (!mounted || _mediaBytes.isEmpty) return;
-        setState(() {
-          _carouselIndex = (_carouselIndex + 1) % _mediaBytes.keys.length;
-        });
-      },
-    );
   }
 
   // ═══════════════════════════════════════════
@@ -167,6 +153,8 @@ class _HomeScreenState extends State<HomeScreen>
     // PanoramaViewer y un controller compartido haría que ambos giren a la vez.
     _panoramaController?.dispose();
     _panoramaController = PanoramaController()..setView(0, 0);
+    _turnBaseLongitude = 0;
+    _turnInteracting = false;
     turn.forward(from: 0);
   }
 
@@ -182,11 +170,34 @@ class _HomeScreenState extends State<HomeScreen>
     _panoramaController?.dispose();
     _panoramaController = null;
     _panoramaIndex = 0;
+    _turnBaseLongitude = 0;
+    _turnInteracting = false;
   }
 
   void _onPanoramaTurnTick() {
     final t = _panoTurnController!.value;
-    _panoramaController?.setView(0, 360.0 * t);
+    _panoramaController?.setView(0, _turnBaseLongitude + 360.0 * t);
+  }
+
+  /// Pausa la rotación para permitir explorar con el dedo. La vuelta pendiente
+  /// se mide desde la longitud donde el usuario quedó mirando.
+  void _pausePanoramaTurn() {
+    _turnInteracting = true;
+    final controller = _panoTurnController;
+    if (controller == null) return;
+    final pano = _panoramaController;
+    if (pano != null) {
+      _turnBaseLongitude = pano.getLongitude() % 360.0;
+    }
+    controller.stop();
+  }
+
+  /// Reanuda la rotación desde el punto donde quedó pausada, completando la
+  /// vuelta completa (base → base+360) antes del siguiente slide.
+  void _resumePanoramaTurn() {
+    if (!_turnInteracting) return;
+    _turnInteracting = false;
+    _panoTurnController?.forward(from: _panoTurnController!.value);
   }
 
   void _onPanoramaTurnStatus(AnimationStatus status) {
@@ -204,6 +215,8 @@ class _HomeScreenState extends State<HomeScreen>
     final retiring = _panoramaController;
     setState(() {
       _panoramaIndex = next;
+      _turnBaseLongitude = 0;
+      _turnInteracting = false;
       _panoramaController = PanoramaController()..setView(0, 0);
     });
     if (retiring != null) {
@@ -270,7 +283,7 @@ class _HomeScreenState extends State<HomeScreen>
       case HomeBackgroundType.video:
         return _buildVideoBackground();
       case HomeBackgroundType.carousel:
-        return _buildCarouselBackground();
+        return _buildPanoramaBackground();
       case HomeBackgroundType.panorama:
         return _buildPanoramaBackground();
     }
@@ -313,22 +326,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildCarouselBackground() {
-    if (_mediaBytes.isEmpty) return _buildDefaultGradient();
-    final keys = _mediaBytes.keys.toList();
-    final key = keys[_carouselIndex % keys.length];
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 800),
-      child: Image.memory(
-        _mediaBytes[key]!,
-        key: ValueKey(key),
-        fit: BoxFit.cover,
-        gaplessPlayback: true,
-        errorBuilder: (_, _, _) => _buildDefaultGradient(),
-      ),
-    );
-  }
-
   Widget _buildPanoramaBackground() {
     final keys = _mediaBytes.keys.toList();
     if (keys.isEmpty) return _buildDefaultGradient();
@@ -337,16 +334,21 @@ class _HomeScreenState extends State<HomeScreen>
     if (bytes == null) return _buildDefaultGradient();
     return AnimatedSwitcher(
       duration: _panoTurnFade,
-      child: PanoramaViewer(
+      child: Listener(
         key: ValueKey(key),
-        animSpeed: 0,
-        interactive: true,
-        sensorControl: SensorControl.none,
-        panoramaController: _panoramaController,
-        child: Image.memory(
-          bytes,
-          fit: BoxFit.fitWidth,
-          errorBuilder: (_, _, _) => _buildDefaultGradient(),
+        onPointerDown: (_) => _pausePanoramaTurn(),
+        onPointerUp: (_) => _resumePanoramaTurn(),
+        onPointerCancel: (_) => _resumePanoramaTurn(),
+        child: PanoramaViewer(
+          animSpeed: 0,
+          interactive: true,
+          sensorControl: SensorControl.none,
+          panoramaController: _panoramaController,
+          child: Image.memory(
+            bytes,
+            fit: BoxFit.fitWidth,
+            errorBuilder: (_, _, _) => _buildDefaultGradient(),
+          ),
         ),
       ),
     );

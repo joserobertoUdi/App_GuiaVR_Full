@@ -47,6 +47,14 @@ class PanoramaViewerWidget extends StatefulWidget {
   /// overlays temporales en tiempo real sin modificar el storage.
   final List<PanoramaOverlay>? overlays;
 
+  /// Velocidad de rotacion automatica del panorama. 0 = sin rotacion.
+  /// Valores positivos (ej. 1.0) activan la rotacion continua lenta.
+  final double animSpeed;
+
+  /// Zoom minimo y maximo del visor panoramico.
+  final double minZoom;
+  final double maxZoom;
+
   const PanoramaViewerWidget({
     super.key,
     required this.panorama,
@@ -58,6 +66,9 @@ class PanoramaViewerWidget extends StatefulWidget {
     this.autoRotateToGuidance = true,
     this.showDirectionHint = true,
     this.overlays,
+    this.animSpeed = 0,
+    this.minZoom = 0.5,
+    this.maxZoom = 5,
   });
 
   @override
@@ -281,10 +292,10 @@ class _PanoramaViewerWidgetState extends State<PanoramaViewerWidget>
     final Widget content = !ready
         ? _buildPlaceholderImage(panorama)
         : PanoramaViewer(
-            animSpeed: 0,
+            animSpeed: widget.animSpeed,
             zoom: 0.7,
-            minZoom: 0.5,
-            maxZoom: 5,
+            minZoom: widget.minZoom,
+            maxZoom: widget.maxZoom,
             sensorControl: SensorControl.orientation,
             panoramaController: _cameraController,
             hotspots: _buildHotspots(panorama),

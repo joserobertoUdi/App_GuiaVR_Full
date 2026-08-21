@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_web_libraries_in_flutter
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:admin_web/core/theme/app_theme.dart';
@@ -6,7 +7,10 @@ import 'package:admin_web/core/utils/app_settings.dart';
 import 'package:admin_web/core/utils/web_file_io.dart';
 import 'package:admin_web/core/utils/local_image_storage.dart';
 import 'package:admin_web/core/utils/campus_bundle_export.dart';
+import 'package:campus_domain/campus_domain.dart' as shared;
 import 'package:admin_web/core/utils/backend_client.dart';
+import 'package:admin_web/core/utils/home_editor_storage.dart';
+import 'package:admin_web/core/utils/nav_start_storage.dart';
 import 'package:admin_web/features/navigation/domain/models/node_model.dart';
 import 'package:admin_web/features/navigation/domain/models/zone_model.dart';
 import 'package:admin_web/features/navigation/domain/models/floor_model.dart';
@@ -28,7 +32,13 @@ class AdminScreen extends StatefulWidget {
 }
 
 class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStateMixin {
+  static const int _homeTabIndex = 0;
+  static const int _qrTabIndex = 4;
+
   late final TabController _tabController;
+  int _lastTabIndex = _homeTabIndex;
+  int _homeRefreshTick = 0;
+  int _qrRefreshTick = 0;
 
   // ═══ FILTROS DE ESTRUCTURA ═══
   String? _selectedBuildingId;
@@ -56,6 +66,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   // ═══ BACKEND (PUSH) ═══
   final _backendUrlController = TextEditingController();
   bool _publishing = false;
+  bool _syncing = false;
 
   // ═══ CONFIG ═══
   int _quickPreviewDelay = AppSettings.defaultQuickPreviewDelay;
@@ -65,7 +76,12 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     super.initState();
     _tabController = TabController(length: 7, vsync: this);
     _tabController.addListener(() {
-      if (_tabController.indexIsChanging) setState(() {});
+      if (_tabController.index != _lastTabIndex) {
+        _lastTabIndex = _tabController.index;
+        if (_lastTabIndex == _homeTabIndex) _homeRefreshTick++;
+        if (_lastTabIndex == _qrTabIndex) _qrRefreshTick++;
+        setState(() {});
+      }
     });
     _loadPersisted();
   }
@@ -80,6 +96,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     if (mounted) {
       setState(() {});
     }
+    _syncFromBackend(silent: false);
   }
 
   @override
@@ -119,11 +136,13 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       body: TabBarView(
         controller: _tabController,
         children: [
-          const HomeTab(),
+          HomeTab(
+            refreshTick: _homeRefreshTick,
+          ),
           _buildStructureView(context),
           _buildAddView(context),
           CatalogTab(onChanged: () => setState(() {})),
-          const QrTab(),
+          QrTab(refreshTick: _qrRefreshTick),
           _buildConfigView(context),
           _buildOverlaysView(context),
         ],
@@ -454,6 +473,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             if (node.destinationLabel != null)
               _kvRow('Label destino', node.destinationLabel!),
             const SizedBox(height: 8),
+            _NodeImagePreview(nodeId: node.id),
             Text('Conexiones (${node.connectedNodeIds.length})',
                 style: AppTheme.bodyMedium),
             const SizedBox(height: 4),
@@ -673,7 +693,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           ),
           const SizedBox(height: 12),
           _buildSectionCard(
-            title: 'Conexiones (mínimo 2)',
+            title: 'Conexiones (mínimo 1)',
             icon: Icons.link,
             children: [
               Wrap(
@@ -702,6 +722,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       key: ValueKey('connections_${_editingNode?.id ?? 'new'}'),
+                      isExpanded: true,
                       initialValue: _connectionToAdd,
                       decoration: const InputDecoration(
                         labelText: 'Agregar conexión',
@@ -727,16 +748,15 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   ),
                 ],
               ),
-              if (_formConnections.length < 2)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Se requieren al menos 2 conexiones para que el nodo sea navegable.',
-                    style: AppTheme.bodySmall.copyWith(
-                      color: AppTheme.warningColor,
-                    ),
+              if (_formConnections.isEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Agrega al menos 1 conexión para que el nodo sea navegable.',
+                  style: AppTheme.bodySmall.copyWith(
+                    color: AppTheme.warningColor,
                   ),
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 12),
@@ -1058,7 +1078,27 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
               icon: const Icon(Icons.upload),
               label: const Text('Importar bundle'),
             ),
+            const SizedBox(height: 12),
+            Text(
+              'O sincroniza directamente desde el backend publicado:',
+              style: AppTheme.bodyMedium,
+            ),
             const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _syncing ? null : () => _syncFromBackend(),
+                icon: _syncing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync),
+                label: Text(_syncing ? 'Sincronizando…' : 'Sync desde backend'),
+              ),
+            ),
+            const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: _confirmReset,
               style: OutlinedButton.styleFrom(
@@ -1324,7 +1364,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       _hasExistingImage = false;
       _busy = false;
     });
-    _tabController.index = 1;
+    _tabController.index = 2;
     await _checkImageForEditingNode();
   }
 
@@ -1337,11 +1377,11 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       );
       return;
     }
-    if (_formConnections.length < 2) {
+    if (_formConnections.isEmpty) {
       AppNotifications.showWarning(
         context,
         title: 'Faltan conexiones',
-        description: 'Se requieren al menos 2 conexiones para el nodo.',
+        description: 'Se requiere al menos 1 conexión para el nodo.',
       );
       return;
     }
@@ -1393,11 +1433,11 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           description: '${node.name} (${node.id}) se guardó correctamente.',
         );
       } else if (mounted) {
-        MockCampusData.addNode(node);
         final photoBytes = _pickedImageBytes;
         if (photoBytes != null && photoBytes.isNotEmpty) {
           await LocalImageStorage.saveImage(nodeId: id, bytes: photoBytes);
         }
+        MockCampusData.addNode(node);
         if (!mounted) return;
         AppNotifications.showSuccess(
           context,
@@ -1411,6 +1451,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         _selectedNodeId = id;
         _resetForm();
       });
+      _tabController.index = 1;
     } catch (e) {
       if (!mounted) return;
       AppNotifications.showError(
@@ -1526,6 +1567,136 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     }
   }
 
+  Future<void> _syncFromBackend({bool silent = false}) async {
+    final url = await _backendUrl();
+    if (!mounted) return;
+    if (url.isEmpty) return;
+    print('[Sync] Starting sync from $url');
+
+    setState(() => _syncing = true);
+    try {
+      // 1. Descargar bundle JSON
+      final bundleJson = await fetchBundle(url);
+      if (!mounted) return;
+      if (bundleJson == null || bundleJson.isEmpty) {
+        print('[Sync] No bundle found at $url');
+        if (!silent) {
+          AppNotifications.showWarning(
+            context,
+            title: 'Sin bundle',
+            description: 'No hay bundle publicado en $url.',
+          );
+        }
+        return;
+      }
+      print('[Sync] Bundle downloaded: ${bundleJson.length} chars');
+      final ok = CampusBundleExport.importFromBundle(bundleJson);
+      if (!ok) {
+        print('[Sync] Bundle import FAILED');
+        if (!silent && mounted) {
+          AppNotifications.showError(
+            context,
+            title: 'Bundle inválido',
+            description: 'El bundle del backend no pudo ser importado.',
+          );
+        }
+        return;
+      }
+      print('[Sync] Bundle imported OK');
+
+      // 2. Descargar imágenes de panorama de nodos
+      var imagesSynced = 0;
+      final imageIds = await fetchImageIds(url);
+      print('[Sync] Found ${imageIds.length} node images');
+      for (final nodeId in imageIds) {
+        final has = await LocalImageStorage.hasImage(nodeId);
+        if (has) {
+          print('[Sync] Image $nodeId already cached, skipping');
+          continue;
+        }
+        final bytes = await fetchImageBytes(url, nodeId);
+        if (bytes != null && bytes.isNotEmpty) {
+          await LocalImageStorage.saveImage(nodeId: nodeId, bytes: bytes);
+          imagesSynced++;
+          print('[Sync] Saved image $nodeId (${bytes.length} bytes)');
+        } else {
+          print('[Sync] FAILED to download image $nodeId');
+        }
+      }
+
+      // 3. Descargar home media (carrusel)
+      var mediaSynced = 0;
+      final homeMediaIds = await fetchHomeMediaList(url);
+      print('[Sync] Found ${homeMediaIds.length} home media');
+      for (final mediaId in homeMediaIds) {
+        final existing = await HomeEditorStorage.loadMediaBytes(mediaId);
+        if (existing != null && existing.isNotEmpty) continue;
+        final bytes = await fetchHomeMediaBytes(url, mediaId);
+        if (bytes != null && bytes.isNotEmpty) {
+          await HomeEditorStorage.saveMediaBytes(mediaId, bytes);
+          mediaSynced++;
+          print('[Sync] Saved home media $mediaId (${bytes.length} bytes)');
+        }
+      }
+
+      // Actualizar config del home desde el bundle
+      try {
+        final data = shared.CampusBundle.parse(bundleJson);
+        if (data.home != null) {
+          print('[Sync] Home config: type=${data.home!.type}, mediaIds=${data.home!.mediaIds}');
+          final current = await HomeEditorStorage.loadState();
+          final mediaItems = <HomeEditorMedia>[];
+          for (final id in data.home!.mediaIds) {
+            final existingMedia = current?.media.where((m) => m.id == id).firstOrNull;
+            if (existingMedia != null) {
+              mediaItems.add(existingMedia);
+            } else {
+              mediaItems.add(HomeEditorMedia(id: id, name: id, isVideo: false));
+            }
+          }
+          await HomeEditorStorage.saveState(HomeEditorState(
+            type: data.home!.type,
+            media: mediaItems,
+            intervalSeconds: data.home!.intervalSeconds,
+          ));
+          print('[Sync] Home config saved: ${mediaItems.length} media items');
+        }
+      } catch (e) {
+        print('[Sync] Home config parse error: $e');
+      }
+
+      setState(() {});
+      _homeRefreshTick++;
+      print('[Sync] DONE: $imagesSynced images, $mediaSynced media synced');
+      if (!silent && mounted) {
+        final summary = CampusBundleExport.describeBundle(bundleJson);
+        AppNotifications.showSuccess(
+          context,
+          title: 'Sincronizado desde backend',
+          description:
+              '$summary · $imagesSynced imágenes nodos, $mediaSynced media carrusel descargados.',
+        );
+      }
+    } on UnsupportedError {
+      // silently ignore outside browser
+    } catch (_) {
+      // silently ignore network errors on auto-sync
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  /// Construye el bundle incluyendo la configuración del fondo de inicio
+  /// (persistida por el [HomeTab]) y el nodo de inicio por defecto.
+  Future<String> _buildBundleWithSettings() async {
+    final homeState = await HomeEditorStorage.loadState();
+    final startNode = await NavStartStorage.loadStartNodeId();
+    return CampusBundleExport.buildBundleWithSettings(
+      homeState: homeState,
+      defaultStartNodeId: startNode,
+    );
+  }
+
   Future<void> _publishToBackend() async {
     final url = await _backendUrl();
     if (!mounted) return;
@@ -1538,7 +1709,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       return;
     }
 
-    final bundle = CampusBundleExport.buildBundle();
+    final bundle = await _buildBundleWithSettings();
     setState(() => _publishing = true);
     try {
       final okBundle = await publishBundle(url, bundle);
@@ -1589,8 +1760,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   }
 
   void _exportBundle() {
-    try {
-      final bundle = CampusBundleExport.buildBundle();
+    _buildBundleWithSettings().then((bundle) {
+      if (!mounted) return;
       downloadFile('campus_bundle.json', bundle);
       final summary = CampusBundleExport.describeBundle(bundle);
       AppNotifications.showSuccess(
@@ -1598,18 +1769,19 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         title: 'Bundle exportado',
         description: summary,
       );
-    } catch (e) {
+    }).catchError((Object e) {
+      if (!mounted) return;
       AppNotifications.showError(
         context,
         title: 'Error al exportar',
         description: 'No se pudo generar el bundle: $e',
       );
-    }
+    });
   }
 
   void _previewBundle() {
-    try {
-      final bundle = CampusBundleExport.buildBundle();
+    _buildBundleWithSettings().then((bundle) {
+      if (!mounted) return;
       final summary = CampusBundleExport.describeBundle(bundle);
       showDialog(
         context: context,
@@ -1624,13 +1796,14 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           ],
         ),
       );
-    } catch (e) {
+    }).catchError((Object e) {
+      if (!mounted) return;
       AppNotifications.showError(
         context,
         title: 'Error',
         description: 'No se pudo generar la vista previa: $e',
       );
-    }
+    });
   }
 
   Future<void> _importBundle() async {
@@ -1767,5 +1940,74 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       case ZoneType.transicion:
         return Icons.stairs;
     }
+  }
+}
+
+class _NodeImagePreview extends StatefulWidget {
+  final String nodeId;
+  const _NodeImagePreview({required this.nodeId});
+
+  @override
+  State<_NodeImagePreview> createState() => _NodeImagePreviewState();
+}
+
+class _NodeImagePreviewState extends State<_NodeImagePreview> {
+  Uint8List? _bytes;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _NodeImagePreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.nodeId != widget.nodeId) {
+      _bytes = null;
+      _loading = true;
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    final bytes = await LocalImageStorage.getImageBytes(widget.nodeId);
+    if (!mounted) return;
+    setState(() {
+      _bytes = bytes;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const SizedBox(
+        height: 80,
+        child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
+      );
+    }
+    if (_bytes == null) {
+      return Container(
+        height: 80,
+        decoration: BoxDecoration(
+          color: Colors.grey.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Center(
+          child: Text('Sin imagen 360°', style: TextStyle(fontSize: 12, color: Colors.grey)),
+        ),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.memory(
+        _bytes!,
+        height: 100,
+        width: double.infinity,
+        fit: BoxFit.cover,
+      ),
+    );
   }
 }

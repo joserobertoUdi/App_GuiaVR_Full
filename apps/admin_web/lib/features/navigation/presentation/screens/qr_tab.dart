@@ -18,7 +18,11 @@ import 'package:admin_web/features/navigation/data/datasources/mock_campus_data.
 /// imprimir/pegarlo en el campus. El escáner de la app móvil lee el mismo
 /// formato.
 class QrTab extends StatefulWidget {
-  const QrTab({super.key});
+  const QrTab({super.key, this.refreshTick = 0});
+
+  /// Contador que el panel incrementa al entrar en esta pestaña; al cambiar,
+  /// la pestaña recarga el campus publicado desde el backend.
+  final int refreshTick;
 
   @override
   State<QrTab> createState() => _QrTabState();
@@ -44,6 +48,14 @@ class _QrTabState extends State<QrTab> {
   void initState() {
     super.initState();
     _loadPublishedCampus();
+  }
+
+  @override
+  void didUpdateWidget(QrTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.refreshTick != oldWidget.refreshTick) {
+      _loadPublishedCampus();
+    }
   }
 
   /// Fuente de datos para generar los QR: prioriza el campus publicado en el

@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:admin_web/core/utils/image_byte_store.dart';
 import 'package:admin_web/core/utils/platform_storage.dart';
 
 /// Almacenamiento local de imágenes de panorama.
-/// - En web: almacena base64 en SharedPreferences (localStorage).
+/// - En web: los bytes van a IndexedDB (cuota de cientos de MB, apta para
+///   panoramas 360°); el base64 en localStorage se usa solo como migración de
+///   imágenes guardadas con versiones anteriores.
 /// - En móvil: mantiene la lógica de archivos si path_provider está disponible,
 ///   pero sin importar dart:io directamente (usa la abstracción de PlatformStorage).
 class LocalImageStorage {
@@ -25,11 +28,16 @@ class LocalImageStorage {
     required List<int> bytes,
     String? description,
   }) async {
-    final base64Data = base64Encode(bytes);
+    final uint8 = Uint8List.fromList(bytes);
     final storage = PlatformStorage.instance;
 
-    // Guardar imagen como base64
-    await storage.write('$_imagePrefix$nodeId', base64Data);
+    // Guardar imagen: IndexedDB en web; base64 en localStorage si no se pudo
+    // usar IndexedDB, o en plataformas sin navegador.
+    try {
+      await writeBytes('$_imagePrefix$nodeId', uint8);
+    } on Object {
+      await storage.write('$_imagePrefix$nodeId', base64Encode(uint8));
+    }
 
     // Guardar metadata
     final metadata = await _loadMetadata();
@@ -53,26 +61,46 @@ class LocalImageStorage {
     if (cached != null) return cached.bytes;
 
     final storage = PlatformStorage.instance;
-    final base64Data = await storage.read('$_imagePrefix$nodeId');
+    final key = '$_imagePrefix$nodeId';
+
+    Uint8List? base64Data;
+    try {
+      base64Data = await readBytes(key);
+    } on Object {
+      base64Data = null;
+    }
+    if (base64Data == null) {
+      // Migración: imágenes guardadas como base64 en versiones anteriores.
+      final raw = await storage.read(key);
+      if (raw != null) {
+        try {
+          base64Data = base64Decode(raw);
+        } catch (_) {
+          base64Data = null;
+        }
+      }
+    }
+
     if (base64Data == null) {
       _imageCache[nodeId] = _ImageEntry.empty();
       return null;
     }
 
-    try {
-      final bytes = base64Decode(base64Data);
-      final entry = _ImageEntry(bytes: bytes);
-      _imageCache[nodeId] = entry;
-      return bytes;
-    } catch (_) {
-      return null;
-    }
+    final entry = _ImageEntry(bytes: base64Data);
+    _imageCache[nodeId] = entry;
+    return base64Data;
   }
 
   /// Indica si existe una imagen guardada para el nodo.
   static Future<bool> hasImage(String nodeId) async {
     final storage = PlatformStorage.instance;
-    return await storage.contains('$_imagePrefix$nodeId');
+    final key = '$_imagePrefix$nodeId';
+    try {
+      if (await hasBytes(key)) return true;
+    } on Object {
+      // falla a localStorage como migración
+    }
+    return await storage.contains(key);
   }
 
   /// Elimina la imagen de un nodo.
@@ -80,6 +108,11 @@ class LocalImageStorage {
     final storage = PlatformStorage.instance;
     await storage.remove('$_imagePrefix$nodeId');
     await storage.remove('$_thumbPrefix$nodeId');
+    try {
+      await deleteBytes('$_imagePrefix$nodeId');
+    } on Object {
+      // noop
+    }
 
     final metadata = await _loadMetadata();
     metadata.remove(nodeId);
@@ -124,6 +157,11 @@ class LocalImageStorage {
     for (final nodeId in metadata.keys) {
       await storage.remove('$_imagePrefix$nodeId');
       await storage.remove('$_thumbPrefix$nodeId');
+      try {
+        await deleteBytes('$_imagePrefix$nodeId');
+      } on Object {
+        // noop
+      }
     }
 
     await storage.remove(_metadataKey);

@@ -79,6 +79,14 @@ class _GuidedRouteScreenState extends State<GuidedRouteScreen> {
     });
   }
 
+  void _nextStep() {
+    if (_autoAdvanceIndex >= _route.nodes.length - 1) return;
+    setState(() {
+      _autoAdvanceIndex++;
+      _route = _route.copyWith(currentStepIndex: _autoAdvanceIndex);
+    });
+  }
+
   void _simulateWrongDirection() {
     setState(() => _showDirectionWarning = true);
     AppNotifications.showWarning(
@@ -502,6 +510,7 @@ class _GuidedRouteScreenState extends State<GuidedRouteScreen> {
   }
 
   Widget _buildNavigationControls() {
+    final isLast = _autoAdvanceIndex >= _route.nodes.length - 1;
     return Positioned(
       bottom: 24,
       left: 16,
@@ -540,28 +549,34 @@ class _GuidedRouteScreenState extends State<GuidedRouteScreen> {
               ),
             Row(
               children: [
-                if (_autoAdvanceIndex > 0)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _previousStep,
-                      icon: const Icon(Icons.arrow_back, size: 18),
-                      label: const Text('Atrás'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white30),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _autoAdvanceIndex > 0 ? _previousStep : null,
+                    icon: const Icon(Icons.arrow_back, size: 18),
+                    label: const Text('Atrás'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: BorderSide(
+                        color: _autoAdvanceIndex > 0 ? Colors.white30 : Colors.white12,
                       ),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
-                if (_autoAdvanceIndex > 0) const SizedBox(width: 12),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: _simulateWrongDirection,
-                    icon: const Icon(Icons.warning_amber, size: 18),
-                    label: const Text('Simular equivocación'),
+                    onPressed: isLast ? null : _nextStep,
+                    icon: Icon(
+                      isLast ? Icons.check_circle : Icons.arrow_forward,
+                      size: 18,
+                    ),
+                    label: Text(isLast ? 'Llegaste' : 'Siguiente'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.errorColor,
+                      backgroundColor: isLast ? AppTheme.successColor : AppTheme.primaryColor,
                       foregroundColor: Colors.white,
+                      disabledBackgroundColor: AppTheme.successColor,
+                      disabledForegroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),

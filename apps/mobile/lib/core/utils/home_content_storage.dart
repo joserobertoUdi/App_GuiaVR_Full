@@ -120,6 +120,33 @@ class HomeContentStorage {
     _bytesCache.remove(mediaId);
   }
 
+  /// Elimina los media locales cuyo id NO esté en [keepIds]. Útil tras una
+  /// sincronización para no dejar archivos huérfanos del backend.
+  static Future<int> cleanupMedia(Set<String> keepIds) async {
+    final dir = await _mediaDirPath();
+    if (!await dir.exists()) return 0;
+    var removed = 0;
+    await for (final entity in dir.list()) {
+      if (entity is! File) continue;
+      final id = _stripMediaExtension(entity.uri.pathSegments.last);
+      if (id.isEmpty || keepIds.contains(id)) continue;
+      try {
+        await entity.delete();
+        _fileCache.remove(id);
+        _bytesCache.remove(id);
+        removed++;
+      } catch (_) {}
+    }
+    return removed;
+  }
+
+  static String _stripMediaExtension(String fileName) {
+    for (final ext in const ['.jpg', '.mp4']) {
+      if (fileName.endsWith(ext)) return fileName.substring(0, fileName.length - ext.length);
+    }
+    return fileName;
+  }
+
   /// Elimina la config y todos los media guardados.
   static Future<void> clearAll() async {
     await PlatformStorage.instance.remove(_configKey);

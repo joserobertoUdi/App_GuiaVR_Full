@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,6 +7,16 @@ import 'package:app_guia_ar/core/utils/campus_bundle_export.dart';
 import 'package:app_guia_ar/core/utils/home_content_storage.dart';
 import 'package:app_guia_ar/core/utils/local_image_storage.dart';
 import 'package:app_guia_ar/features/navigation/data/datasources/mock_campus_data.dart';
+
+/// Notificador global de sync. Las pantallas que dependen del campus
+/// deben escuchar [changes] para reconstruirse cuando el sync termine.
+class CampusSyncNotifier {
+  CampusSyncNotifier._();
+  static final instance = CampusSyncNotifier._();
+  final _controller = StreamController<bool>.broadcast();
+  Stream<bool> get changes => _controller.stream;
+  void notify() => _controller.add(true);
+}
 
 /// Sincronización automática con el backend de push.
 ///
@@ -22,7 +33,7 @@ import 'package:app_guia_ar/features/navigation/data/datasources/mock_campus_dat
 class CampusSyncService {
   CampusSyncService._();
 
-  static const Duration _timeout = Duration(seconds: 8);
+  static const Duration _timeout = Duration(seconds: 10);
 
   static Future<void> sync() async {
     final baseUrl = await AppSettings.backendBaseUrl();
@@ -49,13 +60,25 @@ class CampusSyncService {
         await _downloadImages(client, baseUrl);
       } catch (_) {}
 
+      var homeDownloaded = 0;
+      var homePruned = 0;
       try {
-        await _downloadHomeMedia(client, baseUrl);
+        final result = await _downloadHomeMedia(client, baseUrl);
+        homeDownloaded = result.$1;
+        homePruned = result.$2;
       } catch (_) {}
 
       client.close(force: true);
       if (applied) {
         stdout.writeln('[sync] bundle aplicado desde $baseUrl');
+      }
+      if (applied || homeDownloaded > 0 || homePruned > 0) {
+        stdout.writeln(
+            '[sync] home: $homeDownloaded media descargados, $homePruned '
+            'huérfanos eliminados desde $baseUrl');
+      }
+      if (applied) {
+        CampusSyncNotifier.instance.notify();
       }
     } catch (_) {}
   }
@@ -95,13 +118,14 @@ class CampusSyncService {
     }
   }
 
-  /// Descarga los media del fondo de inicio configurados en el bundle.
-  static Future<void> _downloadHomeMedia(
+  /// Descarga los media del fondo de inicio configurados en el bundle y purga
+  /// los que ya no estén en la configuración. Devuelve `(descargados, purgados)`.
+  static Future<(int, int)> _downloadHomeMedia(
     HttpClient client,
     String baseUrl,
   ) async {
     final config = await HomeContentStorage.loadConfig();
-    if (config == null || config.isEmpty) return;
+    if (config == null || config.isEmpty) return (0, 0);
 
     var downloaded = 0;
     for (final mediaId in config.mediaIds) {
@@ -124,9 +148,12 @@ class CampusSyncService {
       downloaded++;
     }
 
+    final pruned = await HomeContentStorage.cleanupMedia(config.mediaIds.toSet());
+
     // Notifica a la pantalla de inicio para recargar el fondo sin reiniciar.
     if (downloaded > 0) {
       HomeContentStorage.notifyChange();
     }
+    return (downloaded, pruned);
   }
 }

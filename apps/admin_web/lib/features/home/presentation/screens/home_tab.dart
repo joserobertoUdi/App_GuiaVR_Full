@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:admin_web/core/utils/app_notifications.dart';
 import 'package:admin_web/core/utils/app_settings.dart';
 import 'package:admin_web/core/utils/backend_client.dart';
 import 'package:admin_web/core/utils/campus_bundle_export.dart';
+import 'package:admin_web/core/utils/home_editor_storage.dart';
 import 'package:admin_web/core/utils/nav_start_storage.dart';
 import 'package:admin_web/core/utils/web_file_io.dart';
 import 'package:admin_web/features/navigation/data/datasources/mock_campus_data.dart';
@@ -18,7 +20,11 @@ import 'package:admin_web/features/navigation/data/datasources/mock_campus_data.
 /// backend local. La app móvil descarga la configuración y los media al
 /// sincronizar.
 class HomeTab extends StatefulWidget {
-  const HomeTab({super.key});
+  const HomeTab({super.key, this.refreshTick = 0});
+
+  /// Contador que el panel incrementa al entrar en esta pestaña; al cambiar,
+  /// la pestaña vuelve a consultar el backend (estado publicado).
+  final int refreshTick;
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -44,6 +50,18 @@ class _HomeTabState extends State<HomeTab> {
   int _intervalSeconds = 5;
   bool _publishing = false;
 
+  // Hidratación del estado persistido (evita volver a guardar durante la carga).
+  bool _hydrating = true;
+
+  // Estado publicado en el backend, para la sección de verificación.
+  bool _publishedLoading = false;
+  String? _publishedBundleJson;
+  String? _publishedVersion;
+  String? _publishedSummary;
+  List<String> _publishedHomeMediaIds = const [];
+  String? _publishedError;
+  bool _restoringPublished = false;
+
   String? _startBuildingId;
   String? _startFloorId;
   String? _startZoneId;
@@ -52,6 +70,8 @@ class _HomeTabState extends State<HomeTab> {
   static int _idCounter = 0;
 
   bool get _isVideoType => _type == HomeBackgroundType.video;
+
+  List<String> get _localMediaIds => _media.map((m) => m.id).toList();
 
   @override
   void initState() {
@@ -63,6 +83,65 @@ class _HomeTabState extends State<HomeTab> {
         _restoreCascadeFor(id);
       });
     });
+    _hydrateEditorState();
+  }
+
+  @override
+  void didUpdateWidget(HomeTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.refreshTick != oldWidget.refreshTick) {
+      _hydrateEditorState();
+    }
+  }
+
+  /// Restaura el editor desde el almacenamiento local (byte store + storage)
+  /// para que la configuración y los media sobrevivan a la recarga de página.
+  Future<void> _hydrateEditorState() async {
+    final persisted = await HomeEditorStorage.loadState();
+    if (!mounted) return;
+    if (persisted != null) {
+      final restored = <_HomeMedia>[];
+      for (final m in persisted.media) {
+        final bytes = await HomeEditorStorage.loadMediaBytes(m.id);
+        if (bytes != null) {
+          restored.add(_HomeMedia(
+            id: m.id,
+            bytes: bytes,
+            isVideo: m.isVideo,
+            name: m.name,
+          ));
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _type = persisted.type;
+        _intervalSeconds = persisted.intervalSeconds;
+        _media
+          ..clear()
+          ..addAll(restored);
+      });
+    }
+    _hydrating = false;
+    await _loadPublishedStatus();
+  }
+
+  /// Persiste el estado actual del editor (config + bytes) para la recarga.
+  Future<void> _persistEditor() async {
+    if (_hydrating) return;
+    await HomeEditorStorage.saveState(HomeEditorState(
+      type: _type,
+      intervalSeconds: _intervalSeconds,
+      media: _media
+          .map((m) => HomeEditorMedia(
+                id: m.id,
+                name: m.name,
+                isVideo: m.isVideo,
+              ))
+          .toList(),
+    ));
+    for (final m in _media) {
+      await HomeEditorStorage.saveMediaBytes(m.id, m.bytes);
+    }
   }
 
   @override
@@ -85,6 +164,8 @@ class _HomeTabState extends State<HomeTab> {
         _buildStartLocationSection(),
         const SizedBox(height: 16),
         _buildPublishSection(),
+        const SizedBox(height: 16),
+        _buildPublishedStatusCard(),
       ],
     );
   }
@@ -115,7 +196,8 @@ class _HomeTabState extends State<HomeTab> {
             const SizedBox(height: 12),
             Text(
               '● Para el tipo panorama 360° usa una foto esférica o ecuirectangular.\n'
-              '● Para el carrusel, sube varias imágenes; la app las alterna cada N segundos.',
+              '● Para el carrusel 360° sube varias fotos esféricas: cada una '
+              'rota una vuelta completa y luego pasa a la siguiente.',
               style: AppTheme.bodySmall,
             ),
           ],
@@ -149,7 +231,7 @@ class _HomeTabState extends State<HomeTab> {
                 ButtonSegment(
                   value: HomeBackgroundType.carousel,
                   icon: Icon(Icons.view_carousel),
-                  label: Text('Carrusel'),
+                  label: Text('Carrusel 360°'),
                 ),
                 ButtonSegment(
                   value: HomeBackgroundType.panorama,
@@ -158,7 +240,10 @@ class _HomeTabState extends State<HomeTab> {
                 ),
               ],
               selected: {_type},
-              onSelectionChanged: (v) => setState(() => _type = v.first),
+              onSelectionChanged: (v) {
+                setState(() => _type = v.first);
+                _persistEditor();
+              },
             ),
             const SizedBox(height: 8),
             Text(
@@ -178,7 +263,9 @@ class _HomeTabState extends State<HomeTab> {
       case HomeBackgroundType.video:
         return 'Un video de fondo en bucle. Añade movimiento a la presentación.';
       case HomeBackgroundType.carousel:
-        return 'Varias imágenes que se alternan automáticamente.';
+        return 'Carrusel 360° interactivo: cada imagen rota una vuelta '
+            'completa durante el tiempo indicado y luego avanza a la siguiente. '
+            'Usa fotos esféricas/equirectangulares.';
       case HomeBackgroundType.panorama:
         return 'Foto 360° interactiva: el usuario puede girar/mirar alrededor.';
     }
@@ -286,7 +373,10 @@ class _HomeTabState extends State<HomeTab> {
                     visualDensity: VisualDensity.compact,
                     onPressed: _publishing
                         ? null
-                        : () => setState(() => _media.remove(media)),
+                        : () {
+                            setState(() => _media.remove(media));
+                            _persistEditor();
+                          },
                   ),
                 ],
               ),
@@ -323,7 +413,10 @@ class _HomeTabState extends State<HomeTab> {
               label: '$_intervalSeconds s',
               onChanged: _publishing
                   ? null
-                  : (v) => setState(() => _intervalSeconds = v.round()),
+                  : (v) {
+                      setState(() => _intervalSeconds = v.round());
+                      _persistEditor();
+                    },
             ),
           ],
         ),
@@ -429,7 +522,7 @@ class _HomeTabState extends State<HomeTab> {
       case HomeBackgroundType.video:
         return 'Video de fondo';
       case HomeBackgroundType.carousel:
-        return 'Carrusel';
+        return 'Carrusel 360°';
       case HomeBackgroundType.panorama:
         return 'Panorama 360°';
     }
@@ -749,6 +842,7 @@ class _HomeTabState extends State<HomeTab> {
         }
         _media.add(media);
       });
+      unawaited(_persistEditor());
       if (!mounted) return;
       AppNotifications.showSuccess(
         context,
@@ -833,6 +927,7 @@ class _HomeTabState extends State<HomeTab> {
             '${config.describe()} · $uploaded media enviados al teléfono'
             '${_startNodeId != null ? ' · Inicio: ${_selectedStartNode?.name ?? _startNodeId}' : ''}.',
       );
+      await _loadPublishedStatus();
     } on UnsupportedError {
       if (!mounted) return;
       AppNotifications.showError(
@@ -850,5 +945,238 @@ class _HomeTabState extends State<HomeTab> {
     } finally {
       if (mounted) setState(() => _publishing = false);
     }
+  }
+
+  // ═══════════════════════════════════════════
+  // ESTADO PUBLICADO EN EL BACKEND
+  // ═══════════════════════════════════════════
+
+  Widget _buildPublishedStatusCard() {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.cloud_done, color: AppTheme.primaryColor, size: 20),
+                const SizedBox(width: 8),
+                Text('Publicado en el backend', style: AppTheme.headingMedium),
+                const Spacer(),
+                if (_publishedLoading)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  IconButton(
+                    tooltip: 'Consultar de nuevo',
+                    icon: const Icon(Icons.refresh, size: 20),
+                    onPressed:
+                        _restoringPublished || _publishing ? null : _loadPublishedStatus,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            if (_publishedError != null)
+              Text(
+                'No se pudo consultar el backend: $_publishedError',
+                style: AppTheme.bodySmall.copyWith(color: AppTheme.errorColor),
+              )
+            else if (_publishedBundleJson == null)
+              Text(
+                'Aún no hay bundle publicado. Usa "Publicar" para enviarlo al '
+                'teléfono.',
+                style: AppTheme.bodySmall.copyWith(color: AppTheme.textSecondaryColor),
+              )
+            else ...[
+              Text(
+                'Bundle versión ${_publishedVersion ?? '?'} presente en el backend.',
+                style: AppTheme.bodySmall.copyWith(color: AppTheme.textSecondaryColor),
+              ),
+              if (_publishedSummary != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 8),
+                  child: Text(_publishedSummary!, style: AppTheme.bodyMedium),
+                ),
+            ],
+            if (_publishedBundleJson != null) ...[
+              const Divider(height: 24),
+              Text(
+                'Media del fondo publicados (${_publishedHomeMediaIds.length}):',
+                style: AppTheme.bodyMedium,
+              ),
+              if (_publishedHomeMediaIds.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final id in _publishedHomeMediaIds)
+                        Chip(
+                          label: Text(id, style: const TextStyle(fontSize: 12)),
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: _localMediaIds.contains(id)
+                              ? const Color(0xFFE8F5E9)
+                              : const Color(0xFFFFEBEE),
+                        ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: _restoringPublished || _publishing
+                      ? null
+                      : _restoreFromBackend,
+                  icon: _restoringPublished
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.sync),
+                  label: Text(
+                    _restoringPublished
+                        ? 'Restaurando...'
+                        : 'Restaurar desde el backend',
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Consulta el backend: bundle publicado + lista de media del fondo de
+  /// inicio. Útil para verificar que la app móvil recibirá lo mismo.
+  Future<void> _loadPublishedStatus() async {
+    if (_publishedLoading) return;
+    setState(() {
+      _publishedLoading = true;
+      _publishedError = null;
+    });
+    final url = await AppSettings.backendBaseUrl();
+    if (!mounted) return;
+    try {
+      final bundleJson = await fetchBundle(url);
+      String? version;
+      String? summary;
+      if (bundleJson != null) {
+        try {
+          final data = CampusBundle.parse(bundleJson);
+          version = data.version;
+          summary = CampusBundle.describe(bundleJson);
+        } catch (_) {
+          summary = 'El bundle publicado no se puede interpretar como CampusBundle.';
+        }
+      }
+      final mediaIds = await fetchHomeMediaList(url);
+      if (!mounted) return;
+      setState(() {
+        _publishedBundleJson = bundleJson;
+        _publishedVersion = version;
+        _publishedSummary = summary;
+        _publishedHomeMediaIds = mediaIds;
+        _publishedLoading = false;
+      });
+    } on UnsupportedError {
+      if (!mounted) return;
+      setState(() {
+        _publishedLoading = false;
+        _publishedError = 'Solo disponible dentro del navegador';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _publishedLoading = false;
+        _publishedError = '$e';
+      });
+    }
+  }
+
+  /// Restaura el editor desde lo publicado en el backend: descarga los media
+  /// del fondo, aplica tipo/intervalo y el nodo de inicio del bundle.
+  Future<void> _restoreFromBackend() async {
+    final bundleJson = _publishedBundleJson;
+    if (bundleJson == null) return;
+    setState(() => _restoringPublished = true);
+    final url = await AppSettings.backendBaseUrl();
+    try {
+      final data = CampusBundle.parse(bundleJson);
+      final home = data.home;
+      if (home == null || home.mediaIds.isEmpty) {
+        if (!mounted) return;
+        await _applyRestoredHome(null);
+        await _applyRestoredStart(data.navigation?.defaultStartNodeId);
+        return;
+      }
+      final restored = <_HomeMedia>[];
+      for (final id in home.mediaIds) {
+        final bytes = await fetchHomeMediaBytes(url, id);
+        if (bytes == null) continue;
+        restored.add(_HomeMedia(
+          id: id,
+          bytes: bytes,
+          isVideo: home.type == HomeBackgroundType.video,
+          name: home.type == HomeBackgroundType.video ? 'video' : 'img',
+        ));
+      }
+      if (!mounted) return;
+      await _applyRestoredHome(home, media: restored);
+      await _applyRestoredStart(data.navigation?.defaultStartNodeId);
+      if (!mounted) return;
+      AppNotifications.showSuccess(
+        context,
+        title: 'Fondo restaurado',
+        description:
+            '${home.describe()} · ${restored.length} media descargados del backend.',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _restoringPublished = false);
+      AppNotifications.showError(
+        context,
+        title: 'No se pudo restaurar',
+        description: '$e',
+      );
+    }
+  }
+
+  Future<void> _applyRestoredHome(
+    HomeBackgroundConfig? home, {
+    List<_HomeMedia> media = const [],
+  }) async {
+    setState(() {
+      if (home == null) {
+        _media.clear();
+        _type = HomeBackgroundType.image;
+        _intervalSeconds = 5;
+      } else {
+        _media
+          ..clear()
+          ..addAll(media);
+        _type = home.type;
+        _intervalSeconds = home.intervalSeconds;
+      }
+      _restoringPublished = false;
+    });
+    await _persistEditor();
+  }
+
+  Future<void> _applyRestoredStart(String? nodeId) async {
+    await NavStartStorage.saveStartNodeId(nodeId);
+    if (!mounted) return;
+    setState(() {
+      _startNodeId = nodeId;
+      _restoreCascadeFor(nodeId);
+    });
   }
 }

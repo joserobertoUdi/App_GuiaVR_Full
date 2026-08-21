@@ -47,7 +47,7 @@ class HomeBackgroundConfig {
     final label = switch (type) {
       HomeBackgroundType.image => 'Imagen',
       HomeBackgroundType.video => 'Video',
-      HomeBackgroundType.carousel => 'Carrusel ($intervalSeconds s)',
+      HomeBackgroundType.carousel => 'Carrusel 360° ($intervalSeconds s)',
       HomeBackgroundType.panorama => 'Panorama 360°',
     };
     return '$label · ${mediaIds.length} media';
